@@ -187,7 +187,17 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      get_share_by_code: {
+        Args: { p_share_code: string }
+        Returns: {
+          context: string
+          expires_at: string
+          id: string
+          linkedin_url: string
+          name: string
+          phone: string
+        }[]
+      }
     }
     Enums: {
       [_ in never]: never

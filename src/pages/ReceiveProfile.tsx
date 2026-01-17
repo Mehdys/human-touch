@@ -34,30 +34,31 @@ export default function ReceiveProfile() {
       return;
     }
 
+    // Use secure RPC function that requires share_code parameter
     const { data, error: fetchError } = await supabase
-      .from("user_shares")
-      .select("name, linkedin_url, phone, context, expires_at")
-      .eq("share_code", code)
-      .maybeSingle();
+      .rpc("get_share_by_code", { p_share_code: code });
 
-    if (fetchError || !data) {
+    if (fetchError) {
+      console.error("Error fetching share:", fetchError);
       setError("Share link not found or expired");
       setLoading(false);
       return;
     }
 
-    // Check if expired
-    if (new Date(data.expires_at) < new Date()) {
-      setError("This share link has expired");
+    // The function returns an array, get first result
+    const shareRecord = Array.isArray(data) ? data[0] : data;
+    
+    if (!shareRecord) {
+      setError("Share link not found or expired");
       setLoading(false);
       return;
     }
 
     setShareData({
-      name: data.name,
-      linkedin_url: data.linkedin_url,
-      phone: data.phone,
-      context: data.context,
+      name: shareRecord.name,
+      linkedin_url: shareRecord.linkedin_url,
+      phone: shareRecord.phone,
+      context: shareRecord.context,
     });
     setLoading(false);
   };
