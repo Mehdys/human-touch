@@ -3,50 +3,20 @@ import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { Plus, Sparkles, Users } from "lucide-react";
 import { ContactCard } from "@/components/ui/ContactCard";
-
-interface Contact {
-  id: string;
-  name: string;
-  context: string;
-  timeAgo: string;
-  suggestion: string;
-}
-
-const mockContacts: Contact[] = [
-  {
-    id: "1",
-    name: "Sarah Chen",
-    context: "IAx Hackathon",
-    timeAgo: "3 days ago",
-    suggestion: "Coffee this week?",
-  },
-  {
-    id: "2",
-    name: "Marcus Johnson",
-    context: "Product Hunt meetup",
-    timeAgo: "1 week ago",
-    suggestion: "Time for lunch?",
-  },
-  {
-    id: "3",
-    name: "Emma Wilson",
-    context: "Friend's birthday",
-    timeAgo: "2 weeks ago",
-    suggestion: "Weekend brunch?",
-  },
-];
+import { useContacts } from "@/hooks/useContacts";
 
 export default function Home() {
   const navigate = useNavigate();
-  const [contacts, setContacts] = useState<Contact[]>(mockContacts);
+  const { feedContacts, removeFromFeed, markDone, isLoaded } = useContacts();
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [isSelectMode, setIsSelectMode] = useState(false);
 
   const handleLater = (id: string) => {
-    setContacts((prev) => prev.filter((c) => c.id !== id));
+    removeFromFeed(id);
   };
 
-  const handlePlan = (contact: Contact) => {
+  const handlePlan = (contact: typeof feedContacts[0]) => {
+    markDone(contact.id);
     navigate("/plan", { state: { contact } });
   };
 
@@ -63,9 +33,18 @@ export default function Home() {
   };
 
   const handleGroupPlan = () => {
-    const selectedContacts = contacts.filter((c) => selectedIds.has(c.id));
+    const selectedContacts = feedContacts.filter((c) => selectedIds.has(c.id));
+    selectedContacts.forEach((c) => markDone(c.id));
     navigate("/plan", { state: { contacts: selectedContacts, isGroup: true } });
   };
+
+  if (!isLoaded) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-background pb-24">
@@ -74,7 +53,7 @@ export default function Home() {
         <div className="max-w-lg mx-auto px-5 py-4 flex items-center justify-between">
           <h1 className="text-xl font-bold text-foreground">CatchUp</h1>
           <div className="flex items-center gap-2">
-            {contacts.length > 1 && (
+            {feedContacts.length > 1 && (
               <button
                 onClick={() => {
                   setIsSelectMode(!isSelectMode);
@@ -120,9 +99,9 @@ export default function Home() {
       {/* Main content */}
       <main className="max-w-lg mx-auto px-5">
         <AnimatePresence mode="popLayout">
-          {contacts.length > 0 ? (
+          {feedContacts.length > 0 ? (
             <div className="space-y-3">
-              {contacts.map((contact, index) => (
+              {feedContacts.map((contact, index) => (
                 <motion.div
                   key={contact.id}
                   initial={{ opacity: 0, y: 10 }}
@@ -174,9 +153,15 @@ export default function Home() {
               <h2 className="text-xl font-semibold text-foreground mb-2">
                 You're all caught up ✨
               </h2>
-              <p className="text-muted-foreground text-sm max-w-xs">
+              <p className="text-muted-foreground text-sm max-w-xs mb-6">
                 We'll remind you when it's a good time to reconnect.
               </p>
+              <button
+                onClick={() => navigate("/add")}
+                className="bg-primary text-primary-foreground font-medium py-3 px-6 rounded-xl transition-all active:scale-[0.98]"
+              >
+                Add someone new
+              </button>
             </motion.div>
           )}
         </AnimatePresence>
