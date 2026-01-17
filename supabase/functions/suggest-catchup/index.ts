@@ -1,10 +1,25 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { z } from "https://deno.land/x/zod@v3.22.4/mod.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
+
+// Input validation schema
+const ContactSchema = z.object({
+  name: z.string().max(100).default(""),
+  context: z.string().max(500).nullable().optional(),
+  daysSinceMet: z.number().int().min(0).max(36500).default(0),
+  lastCatchup: z.string().max(30).nullable().optional(),
+});
+
+const RequestSchema = z.object({
+  contacts: z.array(ContactSchema).max(50),
+  preferences: z.array(z.string().max(50)).max(20).optional(),
+  city: z.string().max(100).nullable().optional(),
+});
 
 serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -41,26 +56,27 @@ serve(async (req) => {
     const userId = claimsData.claims.sub;
     console.log("Authenticated user:", userId);
 
-    // Validate request body
-    const body = await req.json();
-    const { contacts, preferences, city } = body;
-
-    // Input validation
-    if (!Array.isArray(contacts)) {
+    // Parse and validate request body with zod
+    let body: unknown;
+    try {
+      body = await req.json();
+    } catch {
       return new Response(
-        JSON.stringify({ error: "Invalid input: contacts must be an array" }),
+        JSON.stringify({ error: "Invalid JSON body" }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
-    // Limit number of contacts to prevent abuse
-    const MAX_CONTACTS = 50;
-    if (contacts.length > MAX_CONTACTS) {
+    const parseResult = RequestSchema.safeParse(body);
+    if (!parseResult.success) {
+      console.error("Input validation failed:", parseResult.error.issues);
       return new Response(
-        JSON.stringify({ error: `Too many contacts. Maximum ${MAX_CONTACTS} allowed.` }),
+        JSON.stringify({ error: "Invalid input", details: parseResult.error.issues.map(i => i.message) }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
+
+    const { contacts, preferences, city } = parseResult.data;
 
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
     
@@ -72,18 +88,19 @@ serve(async (req) => {
     console.log("User preferences:", preferences);
     console.log("User city:", city);
 
-    const contactsInfo = contacts?.map((c: any) => ({
-      name: String(c.name || "").slice(0, 100),
-      context: String(c.context || "").slice(0, 200),
-      daysSinceMet: Number(c.daysSinceMet) || 0,
-      lastCatchup: c.lastCatchup ? String(c.lastCatchup).slice(0, 30) : null,
-    })) || [];
+    // Contacts are already validated by zod, just map to required format
+    const contactsInfo = contacts.map((c) => ({
+      name: c.name,
+      context: c.context || "",
+      daysSinceMet: c.daysSinceMet,
+      lastCatchup: c.lastCatchup || null,
+    }));
 
-    const placeTypes = Array.isArray(preferences) && preferences.length > 0 
-      ? preferences.map(p => String(p).slice(0, 50)).join(", ") 
+    const placeTypes = preferences && preferences.length > 0 
+      ? preferences.join(", ") 
       : "coffee shops, bars, restaurants";
 
-    const sanitizedCity = city ? String(city).slice(0, 100) : "not specified";
+    const sanitizedCity = city || "not specified";
 
     const systemPrompt = `You are a friendly assistant helping someone stay connected with people they've met. 
 Your job is to suggest when and why they should catch up with specific contacts, AND recommend specific types of places to meet.
