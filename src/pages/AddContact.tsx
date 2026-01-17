@@ -1,24 +1,13 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
-import { ArrowLeft, User, MapPin, Calendar } from "lucide-react";
-import { TagChip } from "@/components/ui/TagChip";
+import { ArrowLeft, Check } from "lucide-react";
 import { toast } from "sonner";
-
-type TagType = "friend" | "business" | "event" | "family";
 
 export default function AddContact() {
   const navigate = useNavigate();
   const [name, setName] = useState("");
   const [context, setContext] = useState("");
-  const [date, setDate] = useState(new Date().toISOString().split("T")[0]);
-  const [selectedTags, setSelectedTags] = useState<TagType[]>([]);
-
-  const toggleTag = (tag: TagType) => {
-    setSelectedTags((prev) =>
-      prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag]
-    );
-  };
 
   const handleSave = () => {
     if (!name.trim()) {
@@ -27,99 +16,79 @@ export default function AddContact() {
     }
 
     // In a real app, this would save to a database
-    toast.success("Nice. We'll remind you when it's a good moment to catch up.");
+    toast.success("Got it! We'll remind you to catch up soon.", {
+      icon: <Check className="w-4 h-4" />,
+    });
     navigate("/");
   };
+
+  const canSave = name.trim().length > 0;
 
   return (
     <div className="min-h-screen bg-background">
       {/* Header */}
-      <header className="sticky top-0 z-10 bg-background/80 backdrop-blur-lg border-b border-border/50">
-        <div className="max-w-lg mx-auto px-6 py-4 flex items-center gap-4">
+      <header className="sticky top-0 z-10 bg-background/90 backdrop-blur-lg">
+        <div className="max-w-lg mx-auto px-5 py-4 flex items-center justify-between">
           <button
             onClick={() => navigate(-1)}
-            className="w-10 h-10 rounded-full flex items-center justify-center hover:bg-muted transition-colors"
+            className="p-2 -ml-2 rounded-full hover:bg-muted transition-colors"
           >
             <ArrowLeft className="w-5 h-5 text-foreground" />
           </button>
-          <h1 className="text-xl font-bold text-foreground">New Contact</h1>
+          <button
+            onClick={handleSave}
+            disabled={!canSave}
+            className={`font-medium px-4 py-2 rounded-xl transition-all ${
+              canSave
+                ? "bg-primary text-primary-foreground"
+                : "bg-muted text-muted-foreground"
+            }`}
+          >
+            Save
+          </button>
         </div>
       </header>
 
-      {/* Form */}
+      {/* Form - Super Simple */}
       <motion.main
-        initial={{ opacity: 0, y: 20 }}
+        initial={{ opacity: 0, y: 10 }}
         animate={{ opacity: 1, y: 0 }}
-        className="max-w-lg mx-auto px-6 py-8"
+        className="max-w-lg mx-auto px-5 py-6"
       >
-        <div className="space-y-5">
-          {/* Name input */}
-          <div className="relative">
-            <User className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
+        <div className="space-y-6">
+          {/* Name - Primary focus */}
+          <div>
             <input
               type="text"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="Who did you meet?"
-              className="w-full pl-12 pr-4 py-4 rounded-xl border border-border bg-card text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-all text-lg"
+              placeholder="Name"
+              autoFocus
+              className="w-full text-2xl font-semibold bg-transparent text-foreground placeholder:text-muted-foreground/50 focus:outline-none border-b-2 border-transparent focus:border-primary pb-2 transition-colors"
             />
           </div>
 
-          {/* Context input */}
-          <div className="relative">
-            <MapPin className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
+          {/* Context - Optional but helpful */}
+          <div>
             <input
               type="text"
               value={context}
               onChange={(e) => setContext(e.target.value)}
-              placeholder="Where did you meet?"
-              className="w-full pl-12 pr-4 py-4 rounded-xl border border-border bg-card text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-all text-lg"
+              placeholder="Where did you meet? (optional)"
+              className="w-full text-lg bg-transparent text-foreground placeholder:text-muted-foreground/50 focus:outline-none border-b border-border focus:border-primary/50 pb-2 transition-colors"
             />
-          </div>
-
-          {/* Date input */}
-          <div className="relative">
-            <Calendar className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
-            <input
-              type="date"
-              value={date}
-              onChange={(e) => setDate(e.target.value)}
-              className="w-full pl-12 pr-4 py-4 rounded-xl border border-border bg-card text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-all text-lg"
-            />
-          </div>
-
-          {/* Tags */}
-          <div className="space-y-3">
-            <p className="text-sm text-muted-foreground">Tags</p>
-            <div className="flex flex-wrap gap-2">
-              {(["friend", "business", "event", "family"] as TagType[]).map(
-                (tag) => (
-                  <TagChip
-                    key={tag}
-                    type={tag}
-                    selected={selectedTags.includes(tag)}
-                    onClick={() => toggleTag(tag)}
-                  />
-                )
-              )}
-            </div>
           </div>
         </div>
 
-        {/* Save button */}
-        <motion.div
-          initial={{ y: 20, opacity: 0 }}
-          animate={{ y: 0, opacity: 1 }}
+        {/* Helpful hint */}
+        <motion.p
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
           transition={{ delay: 0.3 }}
-          className="mt-10"
+          className="text-sm text-muted-foreground mt-8"
         >
-          <button
-            onClick={handleSave}
-            className="w-full bg-primary text-primary-foreground font-semibold py-4 px-8 rounded-xl hover:opacity-90 transition-all active:scale-[0.98] shadow-soft"
-          >
-            Save
-          </button>
-        </motion.div>
+          We'll remind you to catch up at the right time.
+        </motion.p>
       </motion.main>
     </div>
   );
