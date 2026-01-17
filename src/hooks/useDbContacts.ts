@@ -14,19 +14,35 @@ export interface Contact {
   snoozed_until: string | null;
   is_done: boolean;
   created_at: string;
+  linkedin_url?: string | null;
+  phone?: string | null;
 }
 
 export interface FeedContact extends Contact {
   timeAgo: string;
   suggestion: string;
   daysSinceMet: number;
+  placeType?: string;
+  placeDescription?: string;
+}
+
+interface UserProfile {
+  city: string | null;
+  preferences: string[] | null;
 }
 
 export function useDbContacts() {
   const { user } = useAuth();
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [loading, setLoading] = useState(true);
-  const [suggestions, setSuggestions] = useState<Record<string, { suggestion: string; urgency: string; timeframe: string }>>({});
+  const [profile, setProfile] = useState<UserProfile | null>(null);
+  const [suggestions, setSuggestions] = useState<Record<string, { 
+    suggestion: string; 
+    urgency: string; 
+    timeframe: string;
+    placeType?: string;
+    placeDescription?: string;
+  }>>({});
 
   const fetchContacts = useCallback(async () => {
     if (!user) {
@@ -36,14 +52,25 @@ export function useDbContacts() {
     }
 
     try {
-      const { data, error } = await supabase
-        .from("contacts")
-        .select("*")
-        .eq("user_id", user.id)
-        .order("created_at", { ascending: false });
+      const [contactsResult, profileResult] = await Promise.all([
+        supabase
+          .from("contacts")
+          .select("*")
+          .eq("user_id", user.id)
+          .order("created_at", { ascending: false }),
+        supabase
+          .from("profiles")
+          .select("city, preferences")
+          .eq("user_id", user.id)
+          .maybeSingle()
+      ]);
 
-      if (error) throw error;
-      setContacts(data || []);
+      if (contactsResult.error) throw contactsResult.error;
+      setContacts(contactsResult.data || []);
+
+      if (profileResult.data) {
+        setProfile(profileResult.data);
+      }
     } catch (error) {
       console.error("Error fetching contacts:", error);
     } finally {
@@ -68,7 +95,11 @@ export function useDbContacts() {
       }));
 
       const response = await supabase.functions.invoke("suggest-catchup", {
-        body: { contacts: contactsInfo },
+        body: { 
+          contacts: contactsInfo,
+          preferences: profile?.preferences || [],
+          city: profile?.city || null,
+        },
       });
 
       if (response.error) {
@@ -76,7 +107,14 @@ export function useDbContacts() {
         return;
       }
 
-      const newSuggestions: Record<string, { suggestion: string; urgency: string; timeframe: string }> = {};
+      const newSuggestions: Record<string, { 
+        suggestion: string; 
+        urgency: string; 
+        timeframe: string;
+        placeType?: string;
+        placeDescription?: string;
+      }> = {};
+
       response.data?.suggestions?.forEach((s: any) => {
         const contact = contactsToSuggest.find(
           (c) => c.name.toLowerCase() === s.name?.toLowerCase()
@@ -86,6 +124,8 @@ export function useDbContacts() {
             suggestion: s.suggestion,
             urgency: s.urgency,
             timeframe: s.timeframe,
+            placeType: s.placeType,
+            placeDescription: s.placeDescription,
           };
         }
       });
@@ -94,7 +134,7 @@ export function useDbContacts() {
     } catch (error) {
       console.error("Error fetching AI suggestions:", error);
     }
-  }, []);
+  }, [profile]);
 
   // Get feed contacts (not snoozed, not done)
   const feedContacts: FeedContact[] = contacts
@@ -120,6 +160,8 @@ export function useDbContacts() {
         timeAgo: `Met ${timeAgo}`,
         suggestion: aiSuggestion?.suggestion || defaultSuggestion,
         daysSinceMet,
+        placeType: aiSuggestion?.placeType,
+        placeDescription: aiSuggestion?.placeDescription,
       };
     });
 
@@ -131,9 +173,9 @@ export function useDbContacts() {
     if (contactsNeedingSuggestions.length > 0 && !loading) {
       fetchSuggestions(contactsNeedingSuggestions);
     }
-  }, [contacts, loading]);
+  }, [contacts, loading, profile]);
 
-  const addContact = async (name: string, context?: string) => {
+  const addContact = async (name: string, context?: string, linkedinUrl?: string, phone?: string) => {
     if (!user) return null;
 
     try {
@@ -143,6 +185,8 @@ export function useDbContacts() {
           user_id: user.id,
           name,
           context: context || null,
+          linkedin_url: linkedinUrl || null,
+          phone: phone || null,
         })
         .select()
         .single();
@@ -221,6 +265,7 @@ export function useDbContacts() {
     contacts,
     feedContacts,
     loading,
+    profile,
     addContact,
     snoozeContact,
     markAsCaughtUp,

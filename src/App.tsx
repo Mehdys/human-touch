@@ -2,7 +2,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate, useSearchParams } from "react-router-dom";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
 import Landing from "./pages/Landing";
 import Auth from "./pages/Auth";
@@ -12,6 +12,9 @@ import AddContact from "./pages/AddContact";
 import PlanCatchup from "./pages/PlanCatchup";
 import Booking from "./pages/Booking";
 import Contacts from "./pages/Contacts";
+import Profile from "./pages/Profile";
+import ShareProfile from "./pages/ShareProfile";
+import ReceiveProfile from "./pages/ReceiveProfile";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -61,6 +64,7 @@ function AppRoutes() {
       <Route path="/" element={user ? <Navigate to="/home" replace /> : <Landing />} />
       <Route path="/auth" element={user ? <Navigate to="/home" replace /> : <Auth />} />
       <Route path="/book/:name" element={<Booking />} />
+      <Route path="/receive/:code" element={<ReceiveProfile />} />
 
       {/* Protected routes */}
       <Route
@@ -107,6 +111,26 @@ function AppRoutes() {
           <ProtectedRoute>
             <OnboardingGuard>
               <Contacts />
+            </OnboardingGuard>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/profile"
+        element={
+          <ProtectedRoute>
+            <OnboardingGuard>
+              <Profile />
+            </OnboardingGuard>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/share"
+        element={
+          <ProtectedRoute>
+            <OnboardingGuard>
+              <ShareProfile />
             </OnboardingGuard>
           </ProtectedRoute>
         }

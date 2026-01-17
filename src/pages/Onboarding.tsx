@@ -13,13 +13,23 @@ export default function Onboarding() {
   const navigate = useNavigate();
   const { user } = useAuth();
 
-  const handleComplete = async (city?: string, preference?: string) => {
+  const handleCalendarConnect = async () => {
+    // Google Calendar OAuth - will be handled via Google Auth
+    toast.info("Google Calendar integration coming soon!");
+    setStep(3);
+  };
+
+  const handleComplete = async (city?: string, preferences?: string[]) => {
     // Save preferences to profile
-    if (user && (city || preference)) {
+    if (user) {
       try {
         await supabase
           .from("profiles")
-          .update({ city, preference })
+          .update({ 
+            city, 
+            preferences: preferences || [],
+            preference: preferences?.[0] || null // Keep legacy field for compatibility
+          })
           .eq("user_id", user.id);
       } catch (error) {
         console.error("Error saving preferences:", error);
@@ -40,7 +50,7 @@ export default function Onboarding() {
         {step === 2 && (
           <OnboardingStep2
             key="step2"
-            onConnect={() => setStep(3)}
+            onConnect={handleCalendarConnect}
             onSkip={() => setStep(3)}
           />
         )}

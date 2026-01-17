@@ -58,8 +58,10 @@ export type Database = {
           is_done: boolean | null
           is_snoozed: boolean | null
           last_catchup: string | null
+          linkedin_url: string | null
           met_at: string | null
           name: string
+          phone: string | null
           reminder_days: number | null
           snoozed_until: string | null
           updated_at: string
@@ -72,8 +74,10 @@ export type Database = {
           is_done?: boolean | null
           is_snoozed?: boolean | null
           last_catchup?: string | null
+          linkedin_url?: string | null
           met_at?: string | null
           name: string
+          phone?: string | null
           reminder_days?: number | null
           snoozed_until?: string | null
           updated_at?: string
@@ -86,8 +90,10 @@ export type Database = {
           is_done?: boolean | null
           is_snoozed?: boolean | null
           last_catchup?: string | null
+          linkedin_url?: string | null
           met_at?: string | null
           name?: string
+          phone?: string | null
           reminder_days?: number | null
           snoozed_until?: string | null
           updated_at?: string
@@ -99,28 +105,79 @@ export type Database = {
         Row: {
           city: string | null
           created_at: string
+          google_calendar_connected: boolean | null
+          google_refresh_token: string | null
           id: string
+          linkedin_url: string | null
           name: string | null
+          phone: string | null
           preference: string | null
+          preferences: string[] | null
           updated_at: string
           user_id: string
         }
         Insert: {
           city?: string | null
           created_at?: string
+          google_calendar_connected?: boolean | null
+          google_refresh_token?: string | null
           id?: string
+          linkedin_url?: string | null
           name?: string | null
+          phone?: string | null
           preference?: string | null
+          preferences?: string[] | null
           updated_at?: string
           user_id: string
         }
         Update: {
           city?: string | null
           created_at?: string
+          google_calendar_connected?: boolean | null
+          google_refresh_token?: string | null
           id?: string
+          linkedin_url?: string | null
           name?: string | null
+          phone?: string | null
           preference?: string | null
+          preferences?: string[] | null
           updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      user_shares: {
+        Row: {
+          context: string | null
+          created_at: string
+          expires_at: string
+          id: string
+          linkedin_url: string | null
+          name: string
+          phone: string | null
+          share_code: string
+          user_id: string
+        }
+        Insert: {
+          context?: string | null
+          created_at?: string
+          expires_at?: string
+          id?: string
+          linkedin_url?: string | null
+          name: string
+          phone?: string | null
+          share_code: string
+          user_id: string
+        }
+        Update: {
+          context?: string | null
+          created_at?: string
+          expires_at?: string
+          id?: string
+          linkedin_url?: string | null
+          name?: string
+          phone?: string | null
+          share_code?: string
           user_id?: string
         }
         Relationships: []
