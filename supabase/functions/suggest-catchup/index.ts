@@ -1,4 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -11,33 +12,84 @@ serve(async (req) => {
   }
 
   try {
-    const { contacts, preferences, city } = await req.json();
+    // Authentication check
+    const authHeader = req.headers.get("Authorization");
+    if (!authHeader?.startsWith("Bearer ")) {
+      return new Response(
+        JSON.stringify({ error: "Unauthorized" }),
+        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    const supabase = createClient(
+      Deno.env.get("SUPABASE_URL")!,
+      Deno.env.get("SUPABASE_ANON_KEY")!,
+      { global: { headers: { Authorization: authHeader } } }
+    );
+
+    const token = authHeader.replace("Bearer ", "");
+    const { data: claimsData, error: claimsError } = await supabase.auth.getClaims(token);
+    
+    if (claimsError || !claimsData?.claims) {
+      console.error("Auth validation failed:", claimsError);
+      return new Response(
+        JSON.stringify({ error: "Invalid token" }),
+        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    const userId = claimsData.claims.sub;
+    console.log("Authenticated user:", userId);
+
+    // Validate request body
+    const body = await req.json();
+    const { contacts, preferences, city } = body;
+
+    // Input validation
+    if (!Array.isArray(contacts)) {
+      return new Response(
+        JSON.stringify({ error: "Invalid input: contacts must be an array" }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // Limit number of contacts to prevent abuse
+    const MAX_CONTACTS = 50;
+    if (contacts.length > MAX_CONTACTS) {
+      return new Response(
+        JSON.stringify({ error: `Too many contacts. Maximum ${MAX_CONTACTS} allowed.` }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
     
     if (!LOVABLE_API_KEY) {
       throw new Error("LOVABLE_API_KEY is not configured");
     }
 
-    console.log("Generating suggestions for contacts:", contacts?.length || 0);
+    console.log("Generating suggestions for user:", userId, "contacts:", contacts?.length || 0);
     console.log("User preferences:", preferences);
     console.log("User city:", city);
 
     const contactsInfo = contacts?.map((c: any) => ({
-      name: c.name,
-      context: c.context,
-      daysSinceMet: c.daysSinceMet,
-      lastCatchup: c.lastCatchup,
+      name: String(c.name || "").slice(0, 100),
+      context: String(c.context || "").slice(0, 200),
+      daysSinceMet: Number(c.daysSinceMet) || 0,
+      lastCatchup: c.lastCatchup ? String(c.lastCatchup).slice(0, 30) : null,
     })) || [];
 
-    const placeTypes = preferences?.length > 0 
-      ? preferences.join(", ") 
+    const placeTypes = Array.isArray(preferences) && preferences.length > 0 
+      ? preferences.map(p => String(p).slice(0, 50)).join(", ") 
       : "coffee shops, bars, restaurants";
+
+    const sanitizedCity = city ? String(city).slice(0, 100) : "not specified";
 
     const systemPrompt = `You are a friendly assistant helping someone stay connected with people they've met. 
 Your job is to suggest when and why they should catch up with specific contacts, AND recommend specific types of places to meet.
 
 User's preferred hangout spots: ${placeTypes}
-User's city/area: ${city || "not specified"}
+User's city/area: ${sanitizedCity}
 
 For each contact, generate:
 1. A short, warm suggestion (e.g., "Coffee to discuss the startup idea you both had")
@@ -117,7 +169,7 @@ Match the place type to the relationship - professional contacts might prefer co
     }
 
     const data = await response.json();
-    console.log("AI response received");
+    console.log("AI response received for user:", userId);
 
     const toolCall = data.choices?.[0]?.message?.tool_calls?.[0];
     if (toolCall?.function?.arguments) {
@@ -134,7 +186,7 @@ Match the place type to the relationship - professional contacts might prefer co
   } catch (error) {
     console.error("Error in suggest-catchup:", error);
     return new Response(
-      JSON.stringify({ error: error instanceof Error ? error.message : "Unknown error" }),
+      JSON.stringify({ error: "An error occurred processing your request" }),
       { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   }
