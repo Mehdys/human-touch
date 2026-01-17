@@ -14,7 +14,117 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      catchups: {
+        Row: {
+          contact_ids: string[]
+          created_at: string
+          id: string
+          message: string | null
+          place_name: string | null
+          place_type: string | null
+          scheduled_at: string | null
+          status: string | null
+          user_id: string
+        }
+        Insert: {
+          contact_ids: string[]
+          created_at?: string
+          id?: string
+          message?: string | null
+          place_name?: string | null
+          place_type?: string | null
+          scheduled_at?: string | null
+          status?: string | null
+          user_id: string
+        }
+        Update: {
+          contact_ids?: string[]
+          created_at?: string
+          id?: string
+          message?: string | null
+          place_name?: string | null
+          place_type?: string | null
+          scheduled_at?: string | null
+          status?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
+      contacts: {
+        Row: {
+          context: string | null
+          created_at: string
+          id: string
+          is_done: boolean | null
+          is_snoozed: boolean | null
+          last_catchup: string | null
+          met_at: string | null
+          name: string
+          reminder_days: number | null
+          snoozed_until: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          context?: string | null
+          created_at?: string
+          id?: string
+          is_done?: boolean | null
+          is_snoozed?: boolean | null
+          last_catchup?: string | null
+          met_at?: string | null
+          name: string
+          reminder_days?: number | null
+          snoozed_until?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          context?: string | null
+          created_at?: string
+          id?: string
+          is_done?: boolean | null
+          is_snoozed?: boolean | null
+          last_catchup?: string | null
+          met_at?: string | null
+          name?: string
+          reminder_days?: number | null
+          snoozed_until?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      profiles: {
+        Row: {
+          city: string | null
+          created_at: string
+          id: string
+          name: string | null
+          preference: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          city?: string | null
+          created_at?: string
+          id?: string
+          name?: string | null
+          preference?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          city?: string | null
+          created_at?: string
+          id?: string
+          name?: string | null
+          preference?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never

@@ -3,7 +3,7 @@ import { useState } from "react";
 import { MapPin } from "lucide-react";
 
 interface OnboardingStep3Props {
-  onDone: () => void;
+  onDone: (city?: string, preference?: string) => void;
 }
 
 export function OnboardingStep3({ onDone }: OnboardingStep3Props) {
@@ -85,7 +85,7 @@ export function OnboardingStep3({ onDone }: OnboardingStep3Props) {
         className="mt-12 w-full max-w-xs"
       >
         <button
-          onClick={onDone}
+          onClick={() => onDone(city || undefined, preference || undefined)}
           className="w-full bg-primary text-primary-foreground font-semibold py-4 px-8 rounded-xl hover:opacity-90 transition-all active:scale-[0.98] shadow-soft"
         >
           Done

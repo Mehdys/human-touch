@@ -4,14 +4,31 @@ import { AnimatePresence } from "framer-motion";
 import { OnboardingStep1 } from "@/components/onboarding/OnboardingStep1";
 import { OnboardingStep2 } from "@/components/onboarding/OnboardingStep2";
 import { OnboardingStep3 } from "@/components/onboarding/OnboardingStep3";
+import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/contexts/AuthContext";
+import { toast } from "sonner";
 
 export default function Onboarding() {
   const [step, setStep] = useState(1);
   const navigate = useNavigate();
+  const { user } = useAuth();
 
-  const handleComplete = () => {
+  const handleComplete = async (city?: string, preference?: string) => {
+    // Save preferences to profile
+    if (user && (city || preference)) {
+      try {
+        await supabase
+          .from("profiles")
+          .update({ city, preference })
+          .eq("user_id", user.id);
+      } catch (error) {
+        console.error("Error saving preferences:", error);
+      }
+    }
+
     localStorage.setItem("catchup-onboarded", "true");
-    navigate("/");
+    toast.success("You're all set! 🎉");
+    navigate("/home");
   };
 
   return (

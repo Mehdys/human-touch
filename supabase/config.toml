@@ -1,1 +1,4 @@
 project_id = "kaxyzcsbykvznexfqduh"
+
+[functions.suggest-catchup]
+verify_jwt = false
