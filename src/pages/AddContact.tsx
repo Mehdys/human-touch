@@ -3,9 +3,11 @@ import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import { ArrowLeft, Check } from "lucide-react";
 import { toast } from "sonner";
+import { useContacts } from "@/hooks/useContacts";
 
 export default function AddContact() {
   const navigate = useNavigate();
+  const { addContact } = useContacts();
   const [name, setName] = useState("");
   const [context, setContext] = useState("");
 
@@ -15,7 +17,7 @@ export default function AddContact() {
       return;
     }
 
-    // In a real app, this would save to a database
+    addContact(name, context);
     toast.success("Got it! We'll remind you to catch up soon.", {
       icon: <Check className="w-4 h-4" />,
     });
