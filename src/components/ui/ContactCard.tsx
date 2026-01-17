@@ -1,5 +1,5 @@
 import { motion } from "framer-motion";
-import { MapPin } from "lucide-react";
+import { MapPin, ArrowRight } from "lucide-react";
 
 interface ContactCardProps {
   name: string;
@@ -36,8 +36,8 @@ export function ContactCard({
     >
       <div className="flex items-start gap-4">
         {/* Avatar */}
-        <div className="w-12 h-12 rounded-full bg-secondary flex items-center justify-center flex-shrink-0">
-          <span className="text-secondary-foreground font-semibold text-sm">
+        <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
+          <span className="text-primary font-semibold text-sm">
             {initials}
           </span>
         </div>
@@ -48,9 +48,9 @@ export function ContactCard({
             {name}
           </h2>
           <p className="text-sm text-muted-foreground truncate">
-            {context} · {timeAgo}
+            {context && `${context} · `}{timeAgo}
           </p>
-          <p className="text-foreground/80 mt-2 text-[15px]">{suggestion}</p>
+          <p className="text-foreground/80 mt-2 text-[15px] font-medium">{suggestion}</p>
           
           {placeHint && (
             <div className="flex items-center gap-1.5 mt-2 text-sm text-muted-foreground">
@@ -61,19 +61,20 @@ export function ContactCard({
         </div>
       </div>
 
-      {/* Actions - simplified */}
-      <div className="flex items-center gap-2 mt-4 ml-16">
+      {/* Actions - prominent YES button */}
+      <div className="flex items-center gap-2 mt-4">
         <button
           onClick={onPlan}
-          className="flex-1 bg-primary text-primary-foreground font-medium py-3 px-5 rounded-xl hover:opacity-90 transition-all active:scale-[0.98] text-sm"
+          className="flex-1 bg-primary text-primary-foreground font-semibold py-3.5 px-5 rounded-xl hover:opacity-90 transition-all active:scale-[0.98] flex items-center justify-center gap-2"
         >
-          Let's do it
+          Yes, reach out
+          <ArrowRight className="w-4 h-4" />
         </button>
         <button
           onClick={onLater}
-          className="py-3 px-4 text-muted-foreground hover:text-foreground hover:bg-muted rounded-xl transition-all text-sm"
+          className="py-3.5 px-5 text-muted-foreground hover:text-foreground hover:bg-muted rounded-xl transition-all text-sm font-medium"
         >
-          Later
+          Not now
         </button>
       </div>
     </motion.div>

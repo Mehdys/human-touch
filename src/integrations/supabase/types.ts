@@ -54,6 +54,8 @@ export type Database = {
         Row: {
           context: string | null
           created_at: string
+          event_id: string | null
+          followed_up_at: string | null
           id: string
           is_done: boolean | null
           is_snoozed: boolean | null
@@ -70,6 +72,8 @@ export type Database = {
         Insert: {
           context?: string | null
           created_at?: string
+          event_id?: string | null
+          followed_up_at?: string | null
           id?: string
           is_done?: boolean | null
           is_snoozed?: boolean | null
@@ -86,6 +90,8 @@ export type Database = {
         Update: {
           context?: string | null
           created_at?: string
+          event_id?: string | null
+          followed_up_at?: string | null
           id?: string
           is_done?: boolean | null
           is_snoozed?: boolean | null
@@ -96,6 +102,47 @@ export type Database = {
           phone?: string | null
           reminder_days?: number | null
           snoozed_until?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "contacts_event_id_fkey"
+            columns: ["event_id"]
+            isOneToOne: false
+            referencedRelation: "events"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      events: {
+        Row: {
+          created_at: string
+          event_date: string
+          event_type: string | null
+          id: string
+          location: string | null
+          name: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          event_date?: string
+          event_type?: string | null
+          id?: string
+          location?: string | null
+          name: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          event_date?: string
+          event_type?: string | null
+          id?: string
+          location?: string | null
+          name?: string
           updated_at?: string
           user_id?: string
         }

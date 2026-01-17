@@ -107,7 +107,7 @@ export default function PlanCatchup() {
   };
 
   const handleDone = () => {
-    navigate("/");
+    navigate("/home");
   };
 
   const stepIndex = { time: 0, type: 1, place: 2, ready: 3 }[step];
