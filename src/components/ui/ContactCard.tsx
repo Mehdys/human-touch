@@ -1,10 +1,12 @@
 import { motion } from "framer-motion";
+import { MapPin } from "lucide-react";
 
 interface ContactCardProps {
   name: string;
   context: string;
   timeAgo: string;
   suggestion: string;
+  placeHint?: string;
   onPlan: () => void;
   onLater: () => void;
 }
@@ -14,6 +16,7 @@ export function ContactCard({
   context,
   timeAgo,
   suggestion,
+  placeHint,
   onPlan,
   onLater,
 }: ContactCardProps) {
@@ -48,6 +51,13 @@ export function ContactCard({
             {context} · {timeAgo}
           </p>
           <p className="text-foreground/80 mt-2 text-[15px]">{suggestion}</p>
+          
+          {placeHint && (
+            <div className="flex items-center gap-1.5 mt-2 text-sm text-muted-foreground">
+              <MapPin className="w-3.5 h-3.5" />
+              <span>{placeHint}</span>
+            </div>
+          )}
         </div>
       </div>
 

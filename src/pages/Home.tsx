@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { Plus, Sparkles, Users, LogOut, BookUser } from "lucide-react";
+import { Plus, Sparkles, Users, LogOut, BookUser, Nfc, User, MapPin, Coffee } from "lucide-react";
 import { ContactCard } from "@/components/ui/ContactCard";
 import { useDbContacts } from "@/hooks/useDbContacts";
 import { useAuth } from "@/contexts/AuthContext";
@@ -64,6 +64,13 @@ export default function Home() {
           <h1 className="text-xl font-bold text-foreground">CatchUp</h1>
           <div className="flex items-center gap-2">
             <button
+              onClick={() => navigate("/share")}
+              className="p-2.5 rounded-full hover:bg-muted text-muted-foreground transition-all"
+              title="Share your profile via NFC"
+            >
+              <Nfc className="w-5 h-5" />
+            </button>
+            <button
               onClick={() => navigate("/contacts")}
               className="p-2.5 rounded-full hover:bg-muted text-muted-foreground transition-all"
               title="All contacts"
@@ -90,6 +97,13 @@ export default function Home() {
               className="w-10 h-10 bg-primary text-primary-foreground rounded-full flex items-center justify-center shadow-soft hover:opacity-90 transition-all active:scale-95"
             >
               <Plus className="w-5 h-5" />
+            </button>
+            <button
+              onClick={() => navigate("/profile")}
+              className="p-2.5 rounded-full hover:bg-muted text-muted-foreground transition-all"
+              title="Profile"
+            >
+              <User className="w-5 h-5" />
             </button>
             <button
               onClick={handleSignOut}
@@ -158,6 +172,7 @@ export default function Home() {
                       context={contact.context || ""}
                       timeAgo={contact.timeAgo}
                       suggestion={contact.suggestion}
+                      placeHint={contact.placeDescription}
                       onPlan={() => !isSelectMode && handlePlan(contact)}
                       onLater={() => !isSelectMode && handleLater(contact.id)}
                     />
@@ -180,12 +195,21 @@ export default function Home() {
               <p className="text-muted-foreground text-sm max-w-xs mb-6">
                 Add someone you've met to start building meaningful connections.
               </p>
-              <button
-                onClick={() => navigate("/add")}
-                className="bg-primary text-primary-foreground font-medium py-3 px-6 rounded-xl transition-all active:scale-[0.98]"
-              >
-                Add someone new
-              </button>
+              <div className="flex flex-col gap-3">
+                <button
+                  onClick={() => navigate("/add")}
+                  className="bg-primary text-primary-foreground font-medium py-3 px-6 rounded-xl transition-all active:scale-[0.98]"
+                >
+                  Add someone new
+                </button>
+                <button
+                  onClick={() => navigate("/share")}
+                  className="flex items-center justify-center gap-2 bg-secondary text-secondary-foreground font-medium py-3 px-6 rounded-xl transition-all active:scale-[0.98]"
+                >
+                  <Nfc className="w-4 h-4" />
+                  Share your profile via NFC
+                </button>
+              </div>
             </motion.div>
           )}
         </AnimatePresence>

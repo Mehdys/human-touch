@@ -11,7 +11,7 @@ serve(async (req) => {
   }
 
   try {
-    const { contacts } = await req.json();
+    const { contacts, preferences, city } = await req.json();
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
     
     if (!LOVABLE_API_KEY) {
@@ -19,6 +19,8 @@ serve(async (req) => {
     }
 
     console.log("Generating suggestions for contacts:", contacts?.length || 0);
+    console.log("User preferences:", preferences);
+    console.log("User city:", city);
 
     const contactsInfo = contacts?.map((c: any) => ({
       name: c.name,
@@ -27,16 +29,25 @@ serve(async (req) => {
       lastCatchup: c.lastCatchup,
     })) || [];
 
+    const placeTypes = preferences?.length > 0 
+      ? preferences.join(", ") 
+      : "coffee shops, bars, restaurants";
+
     const systemPrompt = `You are a friendly assistant helping someone stay connected with people they've met. 
-Your job is to suggest when and why they should catch up with specific contacts.
+Your job is to suggest when and why they should catch up with specific contacts, AND recommend specific types of places to meet.
+
+User's preferred hangout spots: ${placeTypes}
+User's city/area: ${city || "not specified"}
 
 For each contact, generate:
 1. A short, warm suggestion (e.g., "Coffee to discuss the startup idea you both had")
 2. An urgency level (high/medium/low) based on how long it's been
 3. A friendly time suggestion (e.g., "This week", "Soon", "When you're free")
+4. A place recommendation based on the user's preferences and the contact's context (e.g., "A quiet coffee shop" for business contacts, "A lively bar" for friends)
 
 Be specific and personal based on the context provided. Keep suggestions under 60 characters.
-Make the suggestions feel human and not robotic.`;
+Make the suggestions feel human and not robotic.
+Match the place type to the relationship - professional contacts might prefer coffee/coworking, friends might prefer bars.`;
 
     const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
       method: "POST",
@@ -50,7 +61,7 @@ Make the suggestions feel human and not robotic.`;
           { role: "system", content: systemPrompt },
           { 
             role: "user", 
-            content: `Here are the contacts I need suggestions for:\n${JSON.stringify(contactsInfo, null, 2)}\n\nPlease provide personalized catch-up suggestions.` 
+            content: `Here are the contacts I need suggestions for:\n${JSON.stringify(contactsInfo, null, 2)}\n\nPlease provide personalized catch-up suggestions with place recommendations.` 
           },
         ],
         tools: [
@@ -58,7 +69,7 @@ Make the suggestions feel human and not robotic.`;
             type: "function",
             function: {
               name: "provide_suggestions",
-              description: "Provide catch-up suggestions for each contact",
+              description: "Provide catch-up suggestions for each contact with place recommendations",
               parameters: {
                 type: "object",
                 properties: {
@@ -71,8 +82,10 @@ Make the suggestions feel human and not robotic.`;
                         suggestion: { type: "string", description: "Short, warm catch-up suggestion under 60 chars" },
                         urgency: { type: "string", enum: ["high", "medium", "low"] },
                         timeframe: { type: "string", description: "Suggested timeframe" },
+                        placeType: { type: "string", description: "Type of place to meet (coffee, bar, restaurant, coworking)" },
+                        placeDescription: { type: "string", description: "Brief description of the ideal place, e.g. 'A quiet coffee shop with good wifi'" },
                       },
-                      required: ["name", "suggestion", "urgency", "timeframe"],
+                      required: ["name", "suggestion", "urgency", "timeframe", "placeType", "placeDescription"],
                     },
                   },
                 },
