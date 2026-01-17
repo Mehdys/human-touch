@@ -1,22 +1,26 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { Plus, Sparkles, Users } from "lucide-react";
+import { Plus, Sparkles, Users, LogOut, BookUser } from "lucide-react";
 import { ContactCard } from "@/components/ui/ContactCard";
-import { useContacts } from "@/hooks/useContacts";
+import { useDbContacts } from "@/hooks/useDbContacts";
+import { useAuth } from "@/contexts/AuthContext";
+import { toast } from "sonner";
 
 export default function Home() {
   const navigate = useNavigate();
-  const { feedContacts, removeFromFeed, markDone, isLoaded } = useContacts();
+  const { feedContacts, loading, snoozeContact, markAsCaughtUp } = useDbContacts();
+  const { signOut } = useAuth();
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [isSelectMode, setIsSelectMode] = useState(false);
 
-  const handleLater = (id: string) => {
-    removeFromFeed(id);
+  const handleLater = async (id: string) => {
+    await snoozeContact(id, 7);
+    toast.success("We'll remind you later");
   };
 
   const handlePlan = (contact: typeof feedContacts[0]) => {
-    markDone(contact.id);
+    markAsCaughtUp(contact.id);
     navigate("/plan", { state: { contact } });
   };
 
@@ -34,11 +38,17 @@ export default function Home() {
 
   const handleGroupPlan = () => {
     const selectedContacts = feedContacts.filter((c) => selectedIds.has(c.id));
-    selectedContacts.forEach((c) => markDone(c.id));
+    selectedContacts.forEach((c) => markAsCaughtUp(c.id));
     navigate("/plan", { state: { contacts: selectedContacts, isGroup: true } });
   };
 
-  if (!isLoaded) {
+  const handleSignOut = async () => {
+    await signOut();
+    toast.success("Signed out");
+    navigate("/");
+  };
+
+  if (loading) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
         <div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" />
@@ -53,6 +63,13 @@ export default function Home() {
         <div className="max-w-lg mx-auto px-5 py-4 flex items-center justify-between">
           <h1 className="text-xl font-bold text-foreground">CatchUp</h1>
           <div className="flex items-center gap-2">
+            <button
+              onClick={() => navigate("/contacts")}
+              className="p-2.5 rounded-full hover:bg-muted text-muted-foreground transition-all"
+              title="All contacts"
+            >
+              <BookUser className="w-5 h-5" />
+            </button>
             {feedContacts.length > 1 && (
               <button
                 onClick={() => {
@@ -73,6 +90,13 @@ export default function Home() {
               className="w-10 h-10 bg-primary text-primary-foreground rounded-full flex items-center justify-center shadow-soft hover:opacity-90 transition-all active:scale-95"
             >
               <Plus className="w-5 h-5" />
+            </button>
+            <button
+              onClick={handleSignOut}
+              className="p-2.5 rounded-full hover:bg-muted text-muted-foreground transition-all"
+              title="Sign out"
+            >
+              <LogOut className="w-5 h-5" />
             </button>
           </div>
         </div>
@@ -131,7 +155,7 @@ export default function Home() {
                   <div className={isSelectMode ? "ml-5" : ""}>
                     <ContactCard
                       name={contact.name}
-                      context={contact.context}
+                      context={contact.context || ""}
                       timeAgo={contact.timeAgo}
                       suggestion={contact.suggestion}
                       onPlan={() => !isSelectMode && handlePlan(contact)}
@@ -154,7 +178,7 @@ export default function Home() {
                 You're all caught up ✨
               </h2>
               <p className="text-muted-foreground text-sm max-w-xs mb-6">
-                We'll remind you when it's a good time to reconnect.
+                Add someone you've met to start building meaningful connections.
               </p>
               <button
                 onClick={() => navigate("/add")}
