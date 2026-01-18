@@ -138,7 +138,7 @@ erDiagram
   - Row Level Security (RLS)
 
 ### AI & APIs
-- **Google Gemini 3 Flash** via Lovable AI Gateway
+- **Google Gemini 1.5 Flash** for AI-powered suggestions
 - **Google Calendar API** for event management
 - **Google Maps** for venue links
 

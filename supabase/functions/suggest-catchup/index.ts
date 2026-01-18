@@ -122,10 +122,10 @@ For the \`placeName\` field, provide the actual name of the business.
 For the \`address\` field, provide the street name or neighborhood if known.
 For the \`searchQuery\` field, provide a string to search in Google Maps (e.g., "The Grind Cafe London").`;
 
-    const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+    const response = await fetch("https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent", {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${LOVABLE_API_KEY}`,
+        "x-goog-api-key": GEMINI_API_KEY,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
