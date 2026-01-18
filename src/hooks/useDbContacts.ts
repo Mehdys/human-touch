@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
-import { differenceInDays, differenceInHours, formatDistanceToNow } from "date-fns";
+import { differenceInDays, formatDistanceToNow } from "date-fns";
 
 export interface Contact {
   id: string;
@@ -16,19 +16,17 @@ export interface Contact {
   created_at: string;
   linkedin_url?: string | null;
   phone?: string | null;
-  event_id?: string | null;
-  followed_up_at?: string | null;
 }
 
 export interface FeedContact extends Contact {
   timeAgo: string;
   suggestion: string;
   daysSinceMet: number;
-  hoursSinceMet: number;
-  urgencyLevel: 'critical' | 'high' | 'medium' | 'low';
-  urgencyMessage: string;
   placeType?: string;
   placeDescription?: string;
+  placeName?: string;
+  address?: string;
+  googleMapsLink?: string;
 }
 
 interface UserProfile {
@@ -36,30 +34,20 @@ interface UserProfile {
   preferences: string[] | null;
 }
 
-// Calculate urgency based on time since meeting
-function getUrgency(hoursSinceMet: number): { level: FeedContact['urgencyLevel']; message: string } {
-  if (hoursSinceMet <= 24) {
-    return { level: 'critical', message: 'Follow up now — connection is fresh' };
-  } else if (hoursSinceMet <= 48) {
-    return { level: 'high', message: 'Best moment to reach out' };
-  } else if (hoursSinceMet <= 72) {
-    return { level: 'medium', message: 'Still a great time to connect' };
-  } else {
-    return { level: 'low', message: 'Time to reconnect' };
-  }
-}
-
 export function useDbContacts() {
   const { user } = useAuth();
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [loading, setLoading] = useState(true);
   const [profile, setProfile] = useState<UserProfile | null>(null);
-  const [suggestions, setSuggestions] = useState<Record<string, { 
-    suggestion: string; 
-    urgency: string; 
+  const [suggestions, setSuggestions] = useState<Record<string, {
+    suggestion: string;
+    urgency: string;
     timeframe: string;
     placeType?: string;
     placeDescription?: string;
+    placeName?: string;
+    address?: string;
+    searchQuery?: string;
   }>>({});
 
   const fetchContacts = useCallback(async () => {
@@ -79,7 +67,7 @@ export function useDbContacts() {
         supabase
           .from("profiles")
           .select("city, preferences")
-          .eq("user_id", user.id)
+          .eq("id", user.id)
           .maybeSingle()
       ]);
 
@@ -113,7 +101,7 @@ export function useDbContacts() {
       }));
 
       const response = await supabase.functions.invoke("suggest-catchup", {
-        body: { 
+        body: {
           contacts: contactsInfo,
           preferences: profile?.preferences || [],
           city: profile?.city || null,
@@ -125,12 +113,15 @@ export function useDbContacts() {
         return;
       }
 
-      const newSuggestions: Record<string, { 
-        suggestion: string; 
-        urgency: string; 
+      const newSuggestions: Record<string, {
+        suggestion: string;
+        urgency: string;
         timeframe: string;
         placeType?: string;
         placeDescription?: string;
+        placeName?: string;
+        address?: string;
+        searchQuery?: string;
       }> = {};
 
       response.data?.suggestions?.forEach((s: any) => {
@@ -144,6 +135,9 @@ export function useDbContacts() {
             timeframe: s.timeframe,
             placeType: s.placeType,
             placeDescription: s.placeDescription,
+            placeName: s.placeName,
+            address: s.address,
+            searchQuery: s.searchQuery,
           };
         }
       });
@@ -154,45 +148,76 @@ export function useDbContacts() {
     }
   }, [profile]);
 
-  // Get feed contacts - prioritized by urgency (recency)
+  // Get feed contacts (not snoozed, not done)
   const feedContacts: FeedContact[] = contacts
     .filter((c) => {
-      // Only show contacts not yet followed up
-      if (c.followed_up_at) return false;
+      // 1. Filter out contacts marked as "done" (dismissed/archived)
       if (c.is_done) return false;
+
+      // 2. Filter out explicitly snoozed contacts
       if (c.is_snoozed && c.snoozed_until) {
         return new Date(c.snoozed_until) < new Date();
       }
+
+      // 3. Filter out contacts we've caught up with recently (within reminder cycle)
+      if (c.last_catchup) {
+        const lastCatchupDate = new Date(c.last_catchup);
+        const daysSinceLastCatchup = differenceInDays(new Date(), lastCatchupDate);
+        if (daysSinceLastCatchup < (c.reminder_days || 14)) {
+          return false;
+        }
+      }
+
       return !c.is_snoozed;
     })
     .map((c) => {
-      const now = new Date();
-      const metAt = new Date(c.met_at);
-      const daysSinceMet = differenceInDays(now, metAt);
-      const hoursSinceMet = differenceInHours(now, metAt);
-      const timeAgo = formatDistanceToNow(metAt, { addSuffix: true });
+      let daysSinceMet = 0;
+      let timeAgo = "recently";
+
+      try {
+        if (c.met_at) {
+          const metDate = new Date(c.met_at);
+          // Check if date is valid
+          if (!isNaN(metDate.getTime())) {
+            daysSinceMet = differenceInDays(new Date(), metDate);
+            timeAgo = `Met ${formatDistanceToNow(metDate, { addSuffix: true })}`;
+          } else {
+            console.warn(`Invalid met_at date for contact ${c.id}: ${c.met_at}`);
+          }
+        }
+      } catch (e) {
+        console.warn(`Error parsing date for contact ${c.id}`, e);
+      }
+
       const aiSuggestion = suggestions[c.id];
-      const { level: urgencyLevel, message: urgencyMessage } = getUrgency(hoursSinceMet);
-      
+
       // Default suggestion based on context
       const defaultSuggestion = c.context
         ? `Catch up about ${c.context.toLowerCase()}`
         : "Time to reconnect!";
 
+      let googleMapsLink = undefined;
+      if (aiSuggestion?.searchQuery) {
+        const query = encodeURIComponent(aiSuggestion.searchQuery);
+        googleMapsLink = `https://www.google.com/maps/search/?api=1&query=${query}`;
+      } else if (aiSuggestion?.placeName) {
+        const city = profile?.city ? ` ${profile.city}` : "";
+        const query = encodeURIComponent(`${aiSuggestion.placeName}${city}`);
+        googleMapsLink = `https://www.google.com/maps/search/?api=1&query=${query}`;
+      }
+
       return {
         ...c,
-        timeAgo: `Met ${timeAgo}`,
+        timeAgo,
         suggestion: aiSuggestion?.suggestion || defaultSuggestion,
         daysSinceMet,
-        hoursSinceMet,
-        urgencyLevel,
-        urgencyMessage,
         placeType: aiSuggestion?.placeType,
         placeDescription: aiSuggestion?.placeDescription,
+        placeName: aiSuggestion?.placeName,
+        address: aiSuggestion?.address,
+        googleMapsLink,
       };
-    })
-    // Sort by urgency (most recent first - lower hoursSinceMet = higher priority)
-    .sort((a, b) => a.hoursSinceMet - b.hoursSinceMet);
+    });
 
   // Fetch suggestions when feed contacts are available
   useEffect(() => {
@@ -204,7 +229,7 @@ export function useDbContacts() {
     }
   }, [contacts, loading, profile]);
 
-  const addContact = async (name: string, context?: string, linkedinUrl?: string, phone?: string, eventId?: string) => {
+  const addContact = async (name: string, context?: string, linkedinUrl?: string, phone?: string) => {
     if (!user) return null;
 
     try {
@@ -216,7 +241,6 @@ export function useDbContacts() {
           context: context || null,
           linkedin_url: linkedinUrl || null,
           phone: phone || null,
-          event_id: eventId || null,
         })
         .select()
         .single();
@@ -261,7 +285,6 @@ export function useDbContacts() {
         .from("contacts")
         .update({
           last_catchup: new Date().toISOString(),
-          followed_up_at: new Date().toISOString(),
           is_snoozed: false,
           snoozed_until: null,
         })
@@ -292,28 +315,6 @@ export function useDbContacts() {
     }
   };
 
-  // Analytics: Get follow-up rate within 72 hours
-  const getFollowUpAnalytics = () => {
-    const now = new Date();
-    const contactsWithEvents = contacts.filter(c => c.event_id);
-    
-    const followedUpIn72h = contactsWithEvents.filter(c => {
-      if (!c.followed_up_at) return false;
-      const metAt = new Date(c.met_at);
-      const followedAt = new Date(c.followed_up_at);
-      const hoursToFollowUp = differenceInHours(followedAt, metAt);
-      return hoursToFollowUp <= 72;
-    });
-
-    return {
-      total: contactsWithEvents.length,
-      followedUp: followedUpIn72h.length,
-      rate: contactsWithEvents.length > 0 
-        ? Math.round((followedUpIn72h.length / contactsWithEvents.length) * 100) 
-        : 0,
-    };
-  };
-
   return {
     contacts,
     feedContacts,
@@ -323,7 +324,6 @@ export function useDbContacts() {
     snoozeContact,
     markAsCaughtUp,
     deleteContact,
-    getFollowUpAnalytics,
     refetch: fetchContacts,
   };
 }

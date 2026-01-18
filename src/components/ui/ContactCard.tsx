@@ -1,5 +1,5 @@
 import { motion } from "framer-motion";
-import { MapPin, ArrowRight } from "lucide-react";
+import { MapPin } from "lucide-react";
 
 interface ContactCardProps {
   name: string;
@@ -7,6 +7,8 @@ interface ContactCardProps {
   timeAgo: string;
   suggestion: string;
   placeHint?: string;
+  placeName?: string;
+  googleMapsLink?: string;
   onPlan: () => void;
   onLater: () => void;
 }
@@ -17,6 +19,8 @@ export function ContactCard({
   timeAgo,
   suggestion,
   placeHint,
+  placeName,
+  googleMapsLink,
   onPlan,
   onLater,
 }: ContactCardProps) {
@@ -36,8 +40,8 @@ export function ContactCard({
     >
       <div className="flex items-start gap-4">
         {/* Avatar */}
-        <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
-          <span className="text-primary font-semibold text-sm">
+        <div className="w-12 h-12 rounded-full bg-secondary flex items-center justify-center flex-shrink-0">
+          <span className="text-secondary-foreground font-semibold text-sm">
             {initials}
           </span>
         </div>
@@ -48,33 +52,44 @@ export function ContactCard({
             {name}
           </h2>
           <p className="text-sm text-muted-foreground truncate">
-            {context && `${context} · `}{timeAgo}
+            {context} · {timeAgo}
           </p>
-          <p className="text-foreground/80 mt-2 text-[15px] font-medium">{suggestion}</p>
-          
-          {placeHint && (
-            <div className="flex items-center gap-1.5 mt-2 text-sm text-muted-foreground">
-              <MapPin className="w-3.5 h-3.5" />
-              <span>{placeHint}</span>
+          <p className="text-foreground/80 mt-2 text-[15px]">{suggestion}</p>
+
+          {(placeName || placeHint) && (
+            <div className="mt-2 text-sm text-muted-foreground">
+              <div className="flex items-center gap-1.5">
+                <MapPin className="w-3.5 h-3.5 flex-shrink-0" />
+                <span className="truncate">{placeName ? `At ${placeName}` : placeHint}</span>
+              </div>
+              {googleMapsLink && (
+                <a
+                  href={googleMapsLink}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-xs text-primary hover:underline ml-5 block mt-0.5"
+                >
+                  View on Maps →
+                </a>
+              )}
             </div>
           )}
         </div>
       </div>
 
-      {/* Actions - prominent YES button */}
-      <div className="flex items-center gap-2 mt-4">
+      {/* Actions - simplified */}
+      <div className="flex items-center gap-2 mt-4 ml-16">
         <button
           onClick={onPlan}
-          className="flex-1 bg-primary text-primary-foreground font-semibold py-3.5 px-5 rounded-xl hover:opacity-90 transition-all active:scale-[0.98] flex items-center justify-center gap-2"
+          className="flex-1 bg-primary text-primary-foreground font-medium py-3 px-5 rounded-xl hover:opacity-90 transition-all active:scale-[0.98] text-sm"
         >
-          Yes, reach out
-          <ArrowRight className="w-4 h-4" />
+          Let's do it
         </button>
         <button
           onClick={onLater}
-          className="py-3.5 px-5 text-muted-foreground hover:text-foreground hover:bg-muted rounded-xl transition-all text-sm font-medium"
+          className="py-3 px-4 text-muted-foreground hover:text-foreground hover:bg-muted rounded-xl transition-all text-sm"
         >
-          Not now
+          Later
         </button>
       </div>
     </motion.div>

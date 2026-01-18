@@ -1,8 +1,10 @@
 import { useState, useMemo } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { ArrowLeft, Copy, Send, Check, Users, Loader2 } from "lucide-react";
+import { ArrowLeft, Copy, Send, Check, Users, Loader2, Calendar } from "lucide-react";
 import { toast } from "sonner";
+import { useCalendarAvailability } from "@/hooks/useCalendar";
+import { format } from "date-fns";
 
 const timeSlots = [
   { id: "1", label: "This Friday", time: "6:30 PM" },
@@ -62,6 +64,10 @@ export default function PlanCatchup() {
     return contact?.name?.split(" ")[0] || "Friend";
   }, [contact, contacts, isGroup]);
 
+  // Fetch calendar availability
+  const { data: calendarData, isLoading: loadingCalendar } = useCalendarAvailability();
+  const hasCalendar = calendarData?.calendarConnected && calendarData.freeSlots.length > 0;
+
   const [step, setStep] = useState<Step>("time");
   const [selectedTime, setSelectedTime] = useState<string | null>(null);
   const [selectedType, setSelectedType] = useState<string | null>(null);
@@ -79,7 +85,7 @@ export default function PlanCatchup() {
       ? `${selectedTimeData.label} at ${selectedTimeData.time}`
       : "";
     const placeStr = selectedPlaceData?.name || "";
-    
+
     if (isGroup) {
       return `Hey everyone! Let's catch up ${timeStr}${placeStr ? ` at ${placeStr}` : ""}. Works for you? 😊`;
     }
@@ -145,27 +151,113 @@ export default function PlanCatchup() {
               exit={{ opacity: 0, x: -20 }}
               className="space-y-5"
             >
-              <h2 className="text-xl font-bold text-foreground">When works?</h2>
-
-              <div className="space-y-2">
-                {timeSlots.map((slot) => (
-                  <button
-                    key={slot.id}
-                    onClick={() => {
-                      setSelectedTime(slot.id);
-                      setStep("type");
-                    }}
-                    className={`w-full p-4 rounded-xl text-left transition-all border flex justify-between items-center ${
-                      selectedTime === slot.id
-                        ? "bg-primary text-primary-foreground border-primary"
-                        : "bg-card border-border hover:border-primary/50"
-                    }`}
-                  >
-                    <span className="font-medium">{slot.label}</span>
-                    <span className="opacity-70">{slot.time}</span>
-                  </button>
-                ))}
+              <div className="flex items-center justify-between">
+                <h2 className="text-xl font-bold text-foreground">When works?</h2>
+                {hasCalendar && (
+                  <div className="flex items-center gap-1 text-xs text-success">
+                    <Calendar className="w-3.5 h-3.5" />
+                    <span>From your calendar</span>
+                  </div>
+                )}
               </div>
+
+              {loadingCalendar ? (
+                <div className="flex items-center justify-center py-12">
+                  <Loader2 className="w-6 h-6 animate-spin text-primary" />
+                  <span className="ml-2 text-muted-foreground">Checking your calendar...</span>
+                </div>
+              ) : hasCalendar ? (
+                <>
+                  {calendarData!.calendarSummary && (
+                    <div className="mb-4 p-4 bg-primary/5 border border-primary/20 rounded-xl">
+                      <p className="text-sm text-foreground/90 leading-relaxed">
+                        🤖 {calendarData!.calendarSummary}
+                      </p>
+                    </div>
+                  )}
+                  <div className="space-y-2">
+                    {calendarData!.freeSlots.map((slot, index) => {
+                      const startDate = new Date(slot.start);
+                      const endDate = new Date(slot.end);
+                      const isToday = startDate.toDateString() === new Date().toDateString();
+                      const isTomorrow = startDate.toDateString() === new Date(Date.now() + 86400000).toDateString();
+
+                      let dayLabel = format(startDate, "EEEE, MMM d");
+                      if (isToday) dayLabel = "Today";
+                      if (isTomorrow) dayLabel = "Tomorrow";
+
+                      return (
+                        <button
+                          key={slot.start}
+                          onClick={() => {
+                            setSelectedTime(slot.start);
+                            setStep("type");
+                          }}
+                          className={`w-full p-4 rounded-xl text-left transition-all border flex flex-col ${selectedTime === slot.start
+                            ? "bg-primary text-primary-foreground border-primary"
+                            : "bg-card border-border hover:border-primary/50"
+                            }`}
+                        >
+                          <div className="flex justify-between items-center">
+                            <div className="flex flex-col">
+                              <span className="font-medium">{dayLabel}</span>
+                              <span className={`text-sm ${selectedTime === slot.start ? "opacity-90" : "text-muted-foreground"}`}>
+                                {format(startDate, "h:mm a")} - {format(endDate, "h:mm a")}
+                              </span>
+                            </div>
+                            <span className={`text-xs ${selectedTime === slot.start ? "opacity-75" : "text-muted-foreground"}`}>
+                              {Math.round(slot.duration / 60)}h {Math.round(slot.duration % 60)}m
+                            </span>
+                          </div>
+                          {
+                            slot.reasoning && (
+                              <p className={`text-xs mt-2 italic ${selectedTime === slot.start ? "opacity-80" : "text-muted-foreground/80"}`}>
+                                {slot.reasoning}
+                              </p>
+                            )
+                          }
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <p className="text-xs text-muted-foreground text-center">
+                    Showing {calendarData!.freeSlots.length} free slot{calendarData!.freeSlots.length !== 1 ? "s" : ""} from your calendar
+                  </p>
+                </>
+              ) : (
+                <>
+                  <div className="space-y-2">
+                    {timeSlots.map((slot) => (
+                      <button
+                        key={slot.id}
+                        onClick={() => {
+                          setSelectedTime(slot.id);
+                          setStep("type");
+                        }}
+                        className={`w-full p-4 rounded-xl text-left transition-all border flex justify-between items-center ${selectedTime === slot.id
+                          ? "bg-primary text-primary-foreground border-primary"
+                          : "bg-card border-border hover:border-primary/50"
+                          }`}
+                      >
+                        <span className="font-medium">{slot.label}</span>
+                        <span className="opacity-70">{slot.time}</span>
+                      </button>
+                    ))}
+                  </div>
+                  {!loadingCalendar && (
+                    <div className="text-center">
+                      <button
+                        onClick={() => {
+                          toast.info("Connect your calendar in Settings to see your real availability!");
+                        }}
+                        className="text-xs text-primary hover:underline"
+                      >
+                        Connect calendar for smart suggestions →
+                      </button>
+                    </div>
+                  )}
+                </>
+              )}
             </motion.div>
           )}
 
@@ -319,22 +411,23 @@ export default function PlanCatchup() {
       </main>
 
       {/* Progress indicator */}
-      {!isSent && (
-        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 flex gap-1.5">
-          {[0, 1, 2, 3].map((i) => (
-            <div
-              key={i}
-              className={`h-1.5 rounded-full transition-all ${
-                i === stepIndex
+      {
+        !isSent && (
+          <div className="fixed bottom-6 left-1/2 -translate-x-1/2 flex gap-1.5">
+            {[0, 1, 2, 3].map((i) => (
+              <div
+                key={i}
+                className={`h-1.5 rounded-full transition-all ${i === stepIndex
                   ? "w-6 bg-primary"
                   : i < stepIndex
-                  ? "w-1.5 bg-primary/50"
-                  : "w-1.5 bg-border"
-              }`}
-            />
-          ))}
-        </div>
-      )}
-    </div>
+                    ? "w-1.5 bg-primary/50"
+                    : "w-1.5 bg-border"
+                  }`}
+              />
+            ))}
+          </div>
+        )
+      }
+    </div >
   );
 }
