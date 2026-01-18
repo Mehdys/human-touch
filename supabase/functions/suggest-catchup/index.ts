@@ -44,7 +44,7 @@ serve(async (req) => {
 
     const token = authHeader.replace("Bearer ", "");
     const { data: claimsData, error: claimsError } = await supabase.auth.getClaims(token);
-    
+
     if (claimsError || !claimsData?.claims) {
       console.error("Auth validation failed:", claimsError);
       return new Response(
@@ -79,7 +79,7 @@ serve(async (req) => {
     const { contacts, preferences, city } = parseResult.data;
 
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
-    
+
     if (!LOVABLE_API_KEY) {
       throw new Error("LOVABLE_API_KEY is not configured");
     }
@@ -96,27 +96,31 @@ serve(async (req) => {
       lastCatchup: c.lastCatchup || null,
     }));
 
-    const placeTypes = preferences && preferences.length > 0 
-      ? preferences.join(", ") 
+    const placeTypes = preferences && preferences.length > 0
+      ? preferences.join(", ")
       : "coffee shops, bars, restaurants";
 
     const sanitizedCity = city || "not specified";
 
     const systemPrompt = `You are a friendly assistant helping someone stay connected with people they've met. 
-Your job is to suggest when and why they should catch up with specific contacts, AND recommend specific types of places to meet.
+Your job is to suggest when and why they should catch up, AND recommend a SPECIFIC, REAL place to meet in their city.
 
 User's preferred hangout spots: ${placeTypes}
 User's city/area: ${sanitizedCity}
 
 For each contact, generate:
-1. A short, warm suggestion (e.g., "Coffee to discuss the startup idea you both had")
-2. An urgency level (high/medium/low) based on how long it's been
-3. A friendly time suggestion (e.g., "This week", "Soon", "When you're free")
-4. A place recommendation based on the user's preferences and the contact's context (e.g., "A quiet coffee shop" for business contacts, "A lively bar" for friends)
+1. A short, warm suggestion (e.g., "Coffee to discuss the startup idea")
+2. An urgency level (high/medium/low)
+3. A friendly time suggestion
+4. A SPECIFIC, REAL place recommendation.
+   - Do NOT say "A coffee shop".
+   - Say "Starbucks on Main St" or "The Grind Cafe".
+   - It must be a real business name that can be found on Google Maps.
+   - If you don't know the specific city, pick a famous chain or a generic name that sounds real, but prioritize real places if the city is known.
 
-Be specific and personal based on the context provided. Keep suggestions under 60 characters.
-Make the suggestions feel human and not robotic.
-Match the place type to the relationship - professional contacts might prefer coffee/coworking, friends might prefer bars.`;
+For the \`placeName\` field, provide the actual name of the business.
+For the \`address\` field, provide the street name or neighborhood if known.
+For the \`searchQuery\` field, provide a string to search in Google Maps (e.g., "The Grind Cafe London").`;
 
     const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
       method: "POST",
@@ -128,9 +132,9 @@ Match the place type to the relationship - professional contacts might prefer co
         model: "google/gemini-3-flash-preview",
         messages: [
           { role: "system", content: systemPrompt },
-          { 
-            role: "user", 
-            content: `Here are the contacts I need suggestions for:\n${JSON.stringify(contactsInfo, null, 2)}\n\nPlease provide personalized catch-up suggestions with place recommendations.` 
+          {
+            role: "user",
+            content: `Here are the contacts I need suggestions for:\n${JSON.stringify(contactsInfo, null, 2)}\n\nPlease provide personalized catch-up suggestions with REAL place recommendations.`
           },
         ],
         tools: [
@@ -138,7 +142,7 @@ Match the place type to the relationship - professional contacts might prefer co
             type: "function",
             function: {
               name: "provide_suggestions",
-              description: "Provide catch-up suggestions for each contact with place recommendations",
+              description: "Provide catch-up suggestions for each contact with real place recommendations",
               parameters: {
                 type: "object",
                 properties: {
@@ -151,10 +155,13 @@ Match the place type to the relationship - professional contacts might prefer co
                         suggestion: { type: "string", description: "Short, warm catch-up suggestion under 60 chars" },
                         urgency: { type: "string", enum: ["high", "medium", "low"] },
                         timeframe: { type: "string", description: "Suggested timeframe" },
-                        placeType: { type: "string", description: "Type of place to meet (coffee, bar, restaurant, coworking)" },
-                        placeDescription: { type: "string", description: "Brief description of the ideal place, e.g. 'A quiet coffee shop with good wifi'" },
+                        placeName: { type: "string", description: "Name of the specific place (e.g. 'Joe's Coffee')" },
+                        address: { type: "string", description: "Address or neighborhood of the place" },
+                        searchQuery: { type: "string", description: "Query to search this place on Google Maps" },
+                        placeType: { type: "string", description: "Type of place (coffee, bar, etc.)" },
+                        placeDescription: { type: "string", description: "Why this place is good" },
                       },
-                      required: ["name", "suggestion", "urgency", "timeframe", "placeType", "placeDescription"],
+                      required: ["name", "suggestion", "urgency", "timeframe", "placeName", "searchQuery", "placeType"],
                     },
                   },
                 },

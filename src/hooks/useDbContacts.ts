@@ -24,6 +24,9 @@ export interface FeedContact extends Contact {
   daysSinceMet: number;
   placeType?: string;
   placeDescription?: string;
+  placeName?: string;
+  address?: string;
+  googleMapsLink?: string;
 }
 
 interface UserProfile {
@@ -36,12 +39,15 @@ export function useDbContacts() {
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [loading, setLoading] = useState(true);
   const [profile, setProfile] = useState<UserProfile | null>(null);
-  const [suggestions, setSuggestions] = useState<Record<string, { 
-    suggestion: string; 
-    urgency: string; 
+  const [suggestions, setSuggestions] = useState<Record<string, {
+    suggestion: string;
+    urgency: string;
     timeframe: string;
     placeType?: string;
     placeDescription?: string;
+    placeName?: string;
+    address?: string;
+    searchQuery?: string;
   }>>({});
 
   const fetchContacts = useCallback(async () => {
@@ -95,7 +101,7 @@ export function useDbContacts() {
       }));
 
       const response = await supabase.functions.invoke("suggest-catchup", {
-        body: { 
+        body: {
           contacts: contactsInfo,
           preferences: profile?.preferences || [],
           city: profile?.city || null,
@@ -107,12 +113,15 @@ export function useDbContacts() {
         return;
       }
 
-      const newSuggestions: Record<string, { 
-        suggestion: string; 
-        urgency: string; 
+      const newSuggestions: Record<string, {
+        suggestion: string;
+        urgency: string;
         timeframe: string;
         placeType?: string;
         placeDescription?: string;
+        placeName?: string;
+        address?: string;
+        searchQuery?: string;
       }> = {};
 
       response.data?.suggestions?.forEach((s: any) => {
@@ -126,6 +135,9 @@ export function useDbContacts() {
             timeframe: s.timeframe,
             placeType: s.placeType,
             placeDescription: s.placeDescription,
+            placeName: s.placeName,
+            address: s.address,
+            searchQuery: s.searchQuery,
           };
         }
       });
@@ -146,22 +158,51 @@ export function useDbContacts() {
       return !c.is_snoozed;
     })
     .map((c) => {
-      const daysSinceMet = differenceInDays(new Date(), new Date(c.met_at));
-      const timeAgo = formatDistanceToNow(new Date(c.met_at), { addSuffix: true });
+      let daysSinceMet = 0;
+      let timeAgo = "recently";
+
+      try {
+        if (c.met_at) {
+          const metDate = new Date(c.met_at);
+          // Check if date is valid
+          if (!isNaN(metDate.getTime())) {
+            daysSinceMet = differenceInDays(new Date(), metDate);
+            timeAgo = `Met ${formatDistanceToNow(metDate, { addSuffix: true })}`;
+          } else {
+            console.warn(`Invalid met_at date for contact ${c.id}: ${c.met_at}`);
+          }
+        }
+      } catch (e) {
+        console.warn(`Error parsing date for contact ${c.id}`, e);
+      }
+
       const aiSuggestion = suggestions[c.id];
-      
+
       // Default suggestion based on context
       const defaultSuggestion = c.context
         ? `Catch up about ${c.context.toLowerCase()}`
         : "Time to reconnect!";
 
+      let googleMapsLink = undefined;
+      if (aiSuggestion?.searchQuery) {
+        const query = encodeURIComponent(aiSuggestion.searchQuery);
+        googleMapsLink = `https://www.google.com/maps/search/?api=1&query=${query}`;
+      } else if (aiSuggestion?.placeName) {
+        const city = profile?.city ? ` ${profile.city}` : "";
+        const query = encodeURIComponent(`${aiSuggestion.placeName}${city}`);
+        googleMapsLink = `https://www.google.com/maps/search/?api=1&query=${query}`;
+      }
+
       return {
         ...c,
-        timeAgo: `Met ${timeAgo}`,
+        timeAgo,
         suggestion: aiSuggestion?.suggestion || defaultSuggestion,
         daysSinceMet,
         placeType: aiSuggestion?.placeType,
         placeDescription: aiSuggestion?.placeDescription,
+        placeName: aiSuggestion?.placeName,
+        address: aiSuggestion?.address,
+        googleMapsLink,
       };
     });
 

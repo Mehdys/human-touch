@@ -83,11 +83,10 @@ export default function Home() {
                   setIsSelectMode(!isSelectMode);
                   setSelectedIds(new Set());
                 }}
-                className={`p-2.5 rounded-full transition-all ${
-                  isSelectMode
+                className={`p-2.5 rounded-full transition-all ${isSelectMode
                     ? "bg-primary text-primary-foreground"
                     : "hover:bg-muted text-muted-foreground"
-                }`}
+                  }`}
               >
                 <Users className="w-5 h-5" />
               </button>
@@ -151,11 +150,10 @@ export default function Home() {
                 >
                   {isSelectMode && (
                     <div
-                      className={`absolute -left-1 top-1/2 -translate-y-1/2 w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all z-10 ${
-                        selectedIds.has(contact.id)
+                      className={`absolute -left-1 top-1/2 -translate-y-1/2 w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all z-10 ${selectedIds.has(contact.id)
                           ? "bg-primary border-primary"
                           : "border-muted-foreground/30 bg-background"
-                      }`}
+                        }`}
                     >
                       {selectedIds.has(contact.id) && (
                         <motion.div
@@ -173,6 +171,8 @@ export default function Home() {
                       timeAgo={contact.timeAgo}
                       suggestion={contact.suggestion}
                       placeHint={contact.placeDescription}
+                      placeName={contact.placeName}
+                      googleMapsLink={contact.googleMapsLink}
                       onPlan={() => !isSelectMode && handlePlan(contact)}
                       onLater={() => !isSelectMode && handleLater(contact.id)}
                     />

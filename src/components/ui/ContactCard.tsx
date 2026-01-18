@@ -7,6 +7,8 @@ interface ContactCardProps {
   timeAgo: string;
   suggestion: string;
   placeHint?: string;
+  placeName?: string;
+  googleMapsLink?: string;
   onPlan: () => void;
   onLater: () => void;
 }
@@ -17,6 +19,8 @@ export function ContactCard({
   timeAgo,
   suggestion,
   placeHint,
+  placeName,
+  googleMapsLink,
   onPlan,
   onLater,
 }: ContactCardProps) {
@@ -51,11 +55,23 @@ export function ContactCard({
             {context} · {timeAgo}
           </p>
           <p className="text-foreground/80 mt-2 text-[15px]">{suggestion}</p>
-          
-          {placeHint && (
-            <div className="flex items-center gap-1.5 mt-2 text-sm text-muted-foreground">
-              <MapPin className="w-3.5 h-3.5" />
-              <span>{placeHint}</span>
+
+          {(placeName || placeHint) && (
+            <div className="mt-2 text-sm text-muted-foreground">
+              <div className="flex items-center gap-1.5">
+                <MapPin className="w-3.5 h-3.5 flex-shrink-0" />
+                <span className="truncate">{placeName ? `At ${placeName}` : placeHint}</span>
+              </div>
+              {googleMapsLink && (
+                <a
+                  href={googleMapsLink}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-xs text-primary hover:underline ml-5 block mt-0.5"
+                >
+                  View on Maps →
+                </a>
+              )}
             </div>
           )}
         </div>

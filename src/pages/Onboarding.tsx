@@ -14,9 +14,32 @@ export default function Onboarding() {
   const { user } = useAuth();
 
   const handleCalendarConnect = async () => {
-    // Google Calendar OAuth - will be handled via Google Auth
-    toast.info("Google Calendar integration coming soon!");
-    setStep(3);
+    try {
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: "google",
+        options: {
+          scopes: "https://www.googleapis.com/auth/calendar.readonly https://www.googleapis.com/auth/calendar.events",
+          redirectTo: `${window.location.origin}/onboarding?step=3`,
+          queryParams: {
+            access_type: "offline",
+            prompt: "consent",
+          },
+        },
+      });
+
+      if (error) {
+        console.error("Calendar connection error:", error);
+        toast.error("Failed to connect calendar");
+        setStep(3);
+      } else {
+        // User will be redirected to Google, then back to onboarding
+        toast.info("Redirecting to Google...");
+      }
+    } catch (error) {
+      console.error("Error connecting calendar:", error);
+      toast.error("Something went wrong");
+      setStep(3);
+    }
   };
 
   const handleComplete = async (city?: string, preferences?: string[]) => {
@@ -25,8 +48,8 @@ export default function Onboarding() {
       try {
         await supabase
           .from("profiles")
-          .update({ 
-            city, 
+          .update({
+            city,
             preferences: preferences || [],
             preference: preferences?.[0] || null // Keep legacy field for compatibility
           })
@@ -64,9 +87,8 @@ export default function Onboarding() {
         {[1, 2, 3].map((s) => (
           <div
             key={s}
-            className={`w-2 h-2 rounded-full transition-all ${
-              s === step ? "bg-primary w-6" : "bg-border"
-            }`}
+            className={`w-2 h-2 rounded-full transition-all ${s === step ? "bg-primary w-6" : "bg-border"
+              }`}
           />
         ))}
       </div>
