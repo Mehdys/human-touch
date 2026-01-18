@@ -9,6 +9,8 @@ import Auth from "./pages/Auth";
 import Onboarding from "./pages/Onboarding";
 import Home from "./pages/Home";
 import AddContact from "./pages/AddContact";
+import AddEvent from "./pages/AddEvent";
+import EventAddContacts from "./pages/EventAddContacts";
 import PlanCatchup from "./pages/PlanCatchup";
 import Booking from "./pages/Booking";
 import Contacts from "./pages/Contacts";
@@ -131,6 +133,26 @@ function AppRoutes() {
           <ProtectedRoute>
             <OnboardingGuard>
               <ShareProfile />
+            </OnboardingGuard>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/event/new"
+        element={
+          <ProtectedRoute>
+            <OnboardingGuard>
+              <AddEvent />
+            </OnboardingGuard>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/event/add-contacts"
+        element={
+          <ProtectedRoute>
+            <OnboardingGuard>
+              <EventAddContacts />
             </OnboardingGuard>
           </ProtectedRoute>
         }

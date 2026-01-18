@@ -67,7 +67,7 @@ export function useDbContacts() {
         supabase
           .from("profiles")
           .select("city, preferences")
-          .eq("user_id", user.id)
+          .eq("id", user.id)
           .maybeSingle()
       ]);
 
@@ -151,10 +151,23 @@ export function useDbContacts() {
   // Get feed contacts (not snoozed, not done)
   const feedContacts: FeedContact[] = contacts
     .filter((c) => {
+      // 1. Filter out contacts marked as "done" (dismissed/archived)
       if (c.is_done) return false;
+
+      // 2. Filter out explicitly snoozed contacts
       if (c.is_snoozed && c.snoozed_until) {
         return new Date(c.snoozed_until) < new Date();
       }
+
+      // 3. Filter out contacts we've caught up with recently (within reminder cycle)
+      if (c.last_catchup) {
+        const lastCatchupDate = new Date(c.last_catchup);
+        const daysSinceLastCatchup = differenceInDays(new Date(), lastCatchupDate);
+        if (daysSinceLastCatchup < (c.reminder_days || 14)) {
+          return false;
+        }
+      }
+
       return !c.is_snoozed;
     })
     .map((c) => {
