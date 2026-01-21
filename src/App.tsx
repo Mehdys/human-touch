@@ -14,7 +14,9 @@ import EventAddContacts from "./pages/EventAddContacts";
 import PlanCatchup from "./pages/PlanCatchup";
 import Booking from "./pages/Booking";
 import Contacts from "./pages/Contacts";
+import ContactDetail from "./pages/ContactDetail";
 import Profile from "./pages/Profile";
+import Settings from "./pages/Settings";
 import ShareProfile from "./pages/ShareProfile";
 import ReceiveProfile from "./pages/ReceiveProfile";
 import NotFound from "./pages/NotFound";
@@ -41,7 +43,7 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
 
 function OnboardingGuard({ children }: { children: React.ReactNode }) {
   const hasOnboarded = localStorage.getItem("catchup-onboarded") === "true";
-  
+
   if (!hasOnboarded) {
     return <Navigate to="/onboarding" replace />;
   }
@@ -98,7 +100,7 @@ function AppRoutes() {
         }
       />
       <Route
-        path="/plan"
+        path="/plan/:contactId?"
         element={
           <ProtectedRoute>
             <OnboardingGuard>
@@ -118,11 +120,31 @@ function AppRoutes() {
         }
       />
       <Route
+        path="/contact/:id"
+        element={
+          <ProtectedRoute>
+            <OnboardingGuard>
+              <ContactDetail />
+            </OnboardingGuard>
+          </ProtectedRoute>
+        }
+      />
+      <Route
         path="/profile"
         element={
           <ProtectedRoute>
             <OnboardingGuard>
               <Profile />
+            </OnboardingGuard>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/settings"
+        element={
+          <ProtectedRoute>
+            <OnboardingGuard>
+              <Settings />
             </OnboardingGuard>
           </ProtectedRoute>
         }

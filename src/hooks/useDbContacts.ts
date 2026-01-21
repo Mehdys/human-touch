@@ -100,7 +100,18 @@ export function useDbContacts() {
         lastCatchup: c.last_catchup,
       }));
 
+      // Get the current session to extract the access token
+      const { data: { session } } = await supabase.auth.getSession();
+
+      if (!session?.access_token) {
+        console.error("No active session for fetching suggestions");
+        return;
+      }
+
       const response = await supabase.functions.invoke("suggest-catchup", {
+        headers: {
+          Authorization: `Bearer ${session.access_token}`,
+        },
         body: {
           contacts: contactsInfo,
           preferences: profile?.preferences || [],

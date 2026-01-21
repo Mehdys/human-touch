@@ -11,6 +11,12 @@ interface AvailabilityData {
     freeSlots: FreeSlot[];
     calendarConnected: boolean;
     eventsCount?: number;
+    calendarEvents?: Array<{
+        summary: string;
+        start: string;
+        end: string;
+        description?: string | null;
+    }>;
 }
 
 export function useCalendarAvailability() {
@@ -27,6 +33,9 @@ export function useCalendarAvailability() {
             }
 
             const { data: functionData, error } = await supabase.functions.invoke("get-availability", {
+                headers: {
+                    Authorization: `Bearer ${data.session.access_token}`,
+                },
                 body: { provider_token: data.session.provider_token }
             });
 
@@ -54,7 +63,18 @@ export function useCreateCalendarEvent() {
         message?: string;
         durationMinutes?: number;
     }) => {
+        const { data: { session } } = await supabase.auth.getSession();
+
+        if (!session?.access_token) {
+            throw new Error("No active session");
+        }
+
+
+
         const { data, error } = await supabase.functions.invoke("create-calendar-event", {
+            headers: {
+                Authorization: `Bearer ${session.access_token}`,
+            },
             body: params,
         });
 

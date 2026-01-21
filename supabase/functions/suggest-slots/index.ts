@@ -1,167 +1,167 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { handleCors, validateAuth, callGeminiAPI, jsonResponse, errorResponse, withErrorHandling } from "../_shared/utils.ts";
 
-const corsHeaders = {
-    "Access-Control-Allow-Origin": "*",
-    "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
+serve(withErrorHandling(async (req) => {
+    // Handle CORS
+    const corsResponse = handleCors(req);
+    if (corsResponse) return corsResponse;
 
-serve(async (req) => {
-    if (req.method === "OPTIONS") {
-        return new Response(null, { headers: corsHeaders });
+    // Validate authentication
+    const { user } = await validateAuth(req);
+
+    // Parse and validate request body
+    const { calendarEvents = [], freeSlots, contact } = await req.json();
+
+    if (!freeSlots || !contact) {
+        return errorResponse("Missing required fields: freeSlots and contact", 400);
     }
 
-    try {
-        const authHeader = req.headers.get("Authorization");
-        if (!authHeader) {
-            return new Response(
-                JSON.stringify({ error: "No authorization header" }),
-                { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-            );
-        }
+    // Process calendar data
+    const now = new Date();
+    const upcomingEvents = calendarEvents
+        .filter((e: any) => new Date(e.start) > now)
+        .sort((a: any, b: any) => new Date(a.start).getTime() - new Date(b.start).getTime());
 
-        const supabase = createClient(
-            Deno.env.get("SUPABASE_URL")!,
-            Deno.env.get("SUPABASE_ANON_KEY")!,
-            { global: { headers: { Authorization: authHeader } } }
+    // Helper function to find surrounding events for a slot
+    const findSurroundingEvents = (slot: any) => {
+        const slotStart = new Date(slot.start);
+        const slotEnd = new Date(slot.end);
+
+        // Find event immediately before this slot
+        const eventsBefore = upcomingEvents.filter((e: any) =>
+            new Date(e.end) <= slotStart
+        );
+        const beforeEvent = eventsBefore.length > 0 ? eventsBefore[eventsBefore.length - 1] : null;
+
+        // Find event immediately after this slot
+        const afterEvent = upcomingEvents.find((e: any) =>
+            new Date(e.start) >= slotEnd
         );
 
-        const { data: { user }, error: userError } = await supabase.auth.getUser();
+        return { beforeEvent, afterEvent };
+    };
 
-        if (userError || !user) {
-            return new Response(
-                JSON.stringify({ error: "Invalid user" }),
-                { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-            );
-        }
+    // Enhance slots with surrounding context
+    const slotsWithContext = freeSlots.map((slot: any) => {
+        const { beforeEvent, afterEvent } = findSurroundingEvents(slot);
+        return {
+            ...slot,
+            beforeEvent: beforeEvent ? {
+                summary: beforeEvent.summary,
+                time: new Date(beforeEvent.start).toLocaleString('en-US', {
+                    weekday: 'short', hour: 'numeric', minute: '2-digit'
+                })
+            } : null,
+            afterEvent: afterEvent ? {
+                summary: afterEvent.summary,
+                time: new Date(afterEvent.start).toLocaleString('en-US', {
+                    weekday: 'short', hour: 'numeric', minute: '2-digit'
+                })
+            } : null,
+        };
+    });
 
-        const { calendarEvents, freeSlots, contact } = await req.json();
+    // Build system prompt
+    const systemPrompt = `You are a friendly AI scheduling assistant helping someone plan a catchup with ${contact.name}.
 
-        if (!calendarEvents || !freeSlots || !contact) {
-            return new Response(
-                JSON.stringify({ error: "Missing required fields" }),
-                { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-            );
-        }
+Your MAIN mission: Greet the user warmly and provide rich, contextual reasoning for why each suggested time slot is great for catching up.
 
-        const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY");
+Key principles:
+1. START with a personalized greeting: "Hey [FirstName]! 👋"
+2. Give a brief, warm summary of their upcoming week (2-3 key events max)
+3. For each time slot, provide RICH contextual reasoning that considers:
+   - Time of day energy (morning fresh energy vs evening chill vibes)
+   - Flow of their day (post-meeting relief, pre-event motivation, etc.)
+   - Practical aspects (morning coffee, lunch break, after-work drinks, etc.)
+   - Relationship to surrounding events
+4. Be casual, friendly, and conversational
+5. Think like a thoughtful friend who knows their schedule
 
-        if (!GEMINI_API_KEY) {
-            throw new Error("GEMINI_API_KEY is not configured");
-        }
+Focus on making each time slot feel like a perfect, intentional choice - not just "you're free then."`;
 
-        const now = new Date();
-        const upcomingEvents = calendarEvents
-            .filter((e: any) => new Date(e.start) > now)
-            .slice(0, 10);
+    // Build user prompt
+    const contactName = contact.name || "your friend";
+    const userFirstName = user.email?.split('@')[0] || "there";
 
-        const eventsContext = upcomingEvents.length > 0
-            ? upcomingEvents.map((e: any) =>
-                `- ${new Date(e.start).toLocaleString('en-US', { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}: ${e.summary}`
-            ).join('\n')
-            : "No upcoming events";
+    const slotDescriptions = slotsWithContext.map((slot: any, i: number) => {
+        const timeLabel = slot.label || new Date(slot.start).toLocaleString('en-US', {
+            weekday: 'long',
+            month: 'short',
+            day: 'numeric',
+            hour: 'numeric',
+            minute: '2-digit'
+        });
 
-        const slotsContext = freeSlots.map((slot: any) =>
-            `- ${slot.label || slot.start}`
-        ).join('\n');
+        const beforeInfo = slot.beforeEvent
+            ? `After: ${slot.beforeEvent.summary} (${slot.beforeEvent.time})`
+            : "After: Start of day";
 
-        const systemPrompt = `You are a scheduling assistant analyzing a user's calendar to suggest optimal catchup times.
+        const afterInfo = slot.afterEvent
+            ? `Before: ${slot.afterEvent.summary} (${slot.afterEvent.time})`
+            : "Before: End of day";
 
-CALENDAR CONTEXT:
-${eventsContext}
+        return `Slot ${i + 1}: ${timeLabel}\n  ${beforeInfo}\n  ${afterInfo}`;
+    }).join('\n\n');
 
-AVAILABLE FREE SLOTS:
-${slotsContext}
+    const userPrompt = `Context: Planning a catchup with ${contactName} (${contact.context || 'general meetup'})
 
-TASK:
-1. First, write a SHORT conversational summary (1-2 sentences) about what you see in their calendar this week. Be friendly and specific.
-2. Then suggest 3-5 optimal time slots with personalized reasoning.
+Available Time Slots:
+${slotDescriptions}
 
-For the summary, examples:
-- "I see you have a Team Meeting on Monday and Dinner on Tuesday. Here's when I think works best:"
-- "Your week looks pretty open! Here are some great times to catch up:"
-- "You've got a busy week with meetings on Monday and Wednesday. I found some perfect gaps:"
+Please provide:
+1. A warm greeting to ${userFirstName} with a summary of their week
+2. For each slot, explain why it's a great time to catch up, considering:
+   - The vibe/energy of that time of day
+   - What they're coming from and going to
+   - Practical catchup options (coffee, lunch, drinks, walk, etc.)
+   - The flow and rhythm of their day
 
-For each slot suggestion, provide:
-1. The slot (must be from the available free slots)
-2. Contextual reasoning (reference actual events, timing, work-life balance)
+Make it feel personalized and thoughtful!`;
 
-Be warm, human, and specific about actual calendar events when possible.`;
-
-        const response = await fetch("https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent", {
-            method: "POST",
-            headers: {
-                "x-goog-api-key": GEMINI_API_KEY,
-                "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-                model: "google/gemini-3-flash-preview",
-                messages: [
-                    { role: "system", content: systemPrompt },
-                    {
-                        role: "user",
-                        content: `Suggest optimal times to catch up with ${contact.name} (context: ${contact.context || 'general catchup'})`
-                    },
-                ],
-                tools: [
-                    {
-                        type: "function",
-                        function: {
-                            name: "suggest_time_slots",
-                            description: "Suggest optimal time slots with reasoning",
-                            parameters: {
-                                type: "object",
-                                properties: {
-                                    calendarSummary: {
-                                        type: "string",
-                                        description: "A friendly 1-2 sentence summary of what you see in their calendar this week"
-                                    },
-                                    suggestions: {
-                                        type: "array",
-                                        items: {
-                                            type: "object",
-                                            properties: {
-                                                slot: { type: "string", description: "The suggested time slot" },
-                                                reasoning: { type: "string", description: "Why this slot is optimal" },
-                                            },
-                                            required: ["slot", "reasoning"],
-                                        },
-                                    },
-                                },
-                                required: ["calendarSummary", "suggestions"],
+    // Tool definition for Gemini
+    const toolDefinition = {
+        name: "suggest_time_slots",
+        description: "Suggest optimal time slots with rich reasoning",
+        parameters: {
+            type: "object",
+            properties: {
+                calendarSummary: {
+                    type: "string",
+                    description: "Start with 'Hey [FirstName]! 👋' then give a brief, warm summary highlighting customer's 2-3 most important upcoming events this week (e.g., 'Hey Alex! 👋 Looks like you've got a big presentation on Tuesday and a team offsite on Friday. Here are some great times to catch up with Sarah this week:')"
+                },
+                suggestions: {
+                    type: "array",
+                    items: {
+                        type: "object",
+                        properties: {
+                            slot: {
+                                type: "string",
+                                description: "The time slot identifier (e.g., 'Slot 1', 'Slot 2')"
+                            },
+                            beforeEvent: {
+                                type: "string",
+                                description: "What event/activity is immediately before this slot"
+                            },
+                            afterEvent: {
+                                type: "string",
+                                description: "What event/activity is immediately after this slot"
+                            },
+                            reasoning: {
+                                type: "string",
+                                description: "Rich 2-3 sentence reasoning explaining why this is a great time. Consider: time of day energy, surrounding events, catchup activity suggestions (coffee/lunch/drinks), and the natural flow of their day. Be warm and conversational."
                             },
                         },
+                        required: ["slot", "beforeEvent", "afterEvent", "reasoning"],
                     },
-                ],
-                tool_choice: { type: "function", function: { name: "suggest_time_slots" } },
-            }),
-        });
+                },
+            },
+            required: ["calendarSummary", "suggestions"],
+        },
+    };
 
-        if (!response.ok) {
-            const errorText = await response.text();
-            console.error("AI gateway error:", response.status, errorText);
-            throw new Error(`AI gateway error: ${response.status}`);
-        }
+    // Call Gemini API using shared utility
+    const result = await callGeminiAPI(userPrompt, toolDefinition, systemPrompt);
 
-        const data = await response.json();
-        const toolCall = data.choices?.[0]?.message?.tool_calls?.[0];
-
-        if (toolCall?.function?.arguments) {
-            const result = JSON.parse(toolCall.function.arguments);
-            return new Response(JSON.stringify(result), {
-                headers: { ...corsHeaders, "Content-Type": "application/json" },
-            });
-        }
-
-        return new Response(JSON.stringify({ suggestions: [] }), {
-            headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-
-    } catch (error) {
-        console.error("Error in suggest-slots:", error);
-        return new Response(
-            JSON.stringify({ error: "Internal server error" }),
-            { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
-    }
-});
+    // Return result
+    return jsonResponse(result);
+}));

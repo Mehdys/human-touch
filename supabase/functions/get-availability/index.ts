@@ -1,14 +1,10 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
+import { handleCors, validateAuth, jsonResponse, errorResponse, withErrorHandling } from "../_shared/utils.ts";
 
 interface CalendarEvent {
   start: { dateTime?: string; date?: string };
   end: { dateTime?: string; date?: string };
+  summary?: string;
 }
 
 interface FreeSlot {
@@ -81,132 +77,79 @@ function findFreeSlots(events: CalendarEvent[], daysAhead = 7): FreeSlot[] {
       currentTime = eventEnd > currentTime ? eventEnd : currentTime;
     }
 
-    // Add remaining time in the day if available
+    // Check for free time after last event
     if (currentTime < dayEnd) {
-      const remainingMinutes = (dayEnd.getTime() - currentTime.getTime()) / 60000;
-      if (remainingMinutes >= 60) {
+      const gapMinutes = (dayEnd.getTime() - currentTime.getTime()) / 60000;
+      if (gapMinutes >= 60) {
         freeSlots.push({
           start: currentTime.toISOString(),
           end: dayEnd.toISOString(),
-          duration: remainingMinutes,
+          duration: gapMinutes,
         });
       }
     }
   }
 
-  // Return top 5 slots
-  return freeSlots.slice(0, 5);
+  return freeSlots;
 }
 
-serve(async (req) => {
-  if (req.method === "OPTIONS") {
-    return new Response(null, { headers: corsHeaders });
+serve(withErrorHandling(async (req) => {
+  // Handle CORS
+  const corsResponse = handleCors(req);
+  if (corsResponse) return corsResponse;
+
+  // Validate authentication
+  const { user } = await validateAuth(req);
+
+  // Parse request body
+  const { provider_token } = await req.json();
+
+  if (!provider_token) {
+    console.log("[get-availability] No provider token - calendar not connected");
+    return jsonResponse({
+      calendarConnected: false,
+      freeSlots: [],
+      calendarEvents: [],
+    });
   }
 
-  try {
-    const authHeader = req.headers.get("Authorization");
-    if (!authHeader) {
-      return new Response(
-        JSON.stringify({ error: "No authorization header" }),
-        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+  console.log(`[get-availability] Fetching calendar for user: ${user.id}`);
+
+  // Fetch calendar events from Google
+  const timeMin = new Date().toISOString();
+  const timeMax = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+
+  const calendarResponse = await fetch(
+    `https://www.googleapis.com/calendar/v3/calendars/primary/events?timeMin=${timeMin}&timeMax=${timeMax}&singleEvents=true&orderBy=startTime`,
+    {
+      headers: {
+        Authorization: `Bearer ${provider_token}`,
+      },
     }
+  );
 
-    const supabase = createClient(
-      Deno.env.get("SUPABASE_URL")!,
-      Deno.env.get("SUPABASE_ANON_KEY")!,
-      { global: { headers: { Authorization: authHeader } } }
-    );
-
-    // Get user from Auth header to verify identity
-    const { data: { user }, error: userError } = await supabase.auth.getUser();
-
-    if (userError || !user) {
-      return new Response(
-        JSON.stringify({ error: "Invalid user" }),
-        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
-    // Get provider_token from request body
-    const { provider_token } = await req.json();
-
-    if (!provider_token) {
-      return new Response(
-        JSON.stringify({
-          error: "Calendar not connected (no token provided)",
-          calendarConnected: false
-        }),
-        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
-    /*
-    const providerToken = session.provider_token;
-
-    if (!providerToken) {
-      return new Response(
-        JSON.stringify({ 
-          error: "Calendar not connected",
-          calendarConnected: false 
-        }),
-        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-    */
-
-    // Fetch calendar events from Google
-    const now = new Date();
-    const weekFromNow = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
-
-    const calendarResponse = await fetch(
-      `https://www.googleapis.com/calendar/v3/calendars/primary/events?` +
-      `timeMin=${now.toISOString()}&` +
-      `timeMax=${weekFromNow.toISOString()}&` +
-      `singleEvents=true&` +
-      `orderBy=startTime`,
-      {
-        headers: {
-          Authorization: `Bearer ${provider_token}`,
-        },
-      }
-    );
-
-    if (!calendarResponse.ok) {
-      const error = await calendarResponse.text();
-      console.error("Google Calendar API error:", error);
-
-      return new Response(
-        JSON.stringify({
-          error: "Failed to fetch calendar",
-          calendarConnected: false
-        }),
-        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
-    const calendarData = await calendarResponse.json();
-    const events = calendarData.items || [];
-
-    console.log(`Found ${events.length} events for user ${user.id}`);
-
-    // Find free slots
-    const freeSlots = findFreeSlots(events);
-
-    return new Response(
-      JSON.stringify({
-        freeSlots,
-        calendarConnected: true,
-        eventsCount: events.length
-      }),
-      { headers: { ...corsHeaders, "Content-Type": "application/json" } }
-    );
-
-  } catch (error) {
-    console.error("Error in get-availability:", error);
-    return new Response(
-      JSON.stringify({ error: "Internal server error" }),
-      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-    );
+  if (!calendarResponse.ok) {
+    console.error("[get-availability] Google Calendar API error:", calendarResponse.status);
+    throw new Error(`Failed to fetch calendar events: ${calendarResponse.status}`);
   }
-});
+
+  const calendarData = await calendarResponse.json();
+  const events: CalendarEvent[] = calendarData.items || [];
+
+  console.log(`[get-availability] Found ${events.length} calendar events`);
+
+  // Find free slots
+  const freeSlots = findFreeSlots(events);
+
+  console.log(`[get-availability] Found ${freeSlots.length} free slots`);
+
+  return jsonResponse({
+    calendarConnected: true,
+    freeSlots,
+    calendarEvents: events.map((e: CalendarEvent) => ({
+      summary: e.summary || "Untitled Event",
+      start: e.start.dateTime || e.start.date,
+      end: e.end.dateTime || e.end.date,
+    })),
+  });
+}));

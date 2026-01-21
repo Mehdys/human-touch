@@ -60,7 +60,8 @@ export default function Contacts() {
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, x: -50 }}
                   transition={{ delay: index * 0.03 }}
-                  className="flex items-center gap-3 p-4 bg-card rounded-xl border border-border"
+                  onClick={() => navigate(`/contact/${contact.id}`, { state: { contact } })}
+                  className="flex items-center gap-3 p-4 bg-card rounded-xl border border-border cursor-pointer hover:bg-muted/50 transition-colors"
                 >
                   <div className="w-10 h-10 bg-secondary rounded-full flex items-center justify-center">
                     <User className="w-5 h-5 text-secondary-foreground" />
@@ -76,7 +77,10 @@ export default function Contacts() {
                     )}
                   </div>
                   <button
-                    onClick={() => handleDelete(contact.id, contact.name)}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleDelete(contact.id, contact.name);
+                    }}
                     disabled={deletingId === contact.id}
                     className="p-2 text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-full transition-colors"
                   >

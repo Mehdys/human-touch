@@ -9,6 +9,7 @@ interface ContactCardProps {
   placeHint?: string;
   placeName?: string;
   googleMapsLink?: string;
+  onClick?: () => void;
   onPlan: () => void;
   onLater: () => void;
 }
@@ -21,6 +22,7 @@ export function ContactCard({
   placeHint,
   placeName,
   googleMapsLink,
+  onClick,
   onPlan,
   onLater,
 }: ContactCardProps) {
@@ -38,7 +40,11 @@ export function ContactCard({
       exit={{ opacity: 0, x: -50 }}
       className="bg-card rounded-2xl p-5 shadow-card border border-border/30"
     >
-      <div className="flex items-start gap-4">
+      {/* Main clickable content */}
+      <div
+        onClick={onClick}
+        className={`flex items-start gap-4 ${onClick ? 'cursor-pointer hover:opacity-95 transition-opacity' : ''}`}
+      >
         {/* Avatar */}
         <div className="w-12 h-12 rounded-full bg-secondary flex items-center justify-center flex-shrink-0">
           <span className="text-secondary-foreground font-semibold text-sm">
@@ -80,13 +86,19 @@ export function ContactCard({
       {/* Actions - simplified */}
       <div className="flex items-center gap-2 mt-4 ml-16">
         <button
-          onClick={onPlan}
+          onClick={(e) => {
+            e.stopPropagation();
+            onPlan();
+          }}
           className="flex-1 bg-primary text-primary-foreground font-medium py-3 px-5 rounded-xl hover:opacity-90 transition-all active:scale-[0.98] text-sm"
         >
           Let's do it
         </button>
         <button
-          onClick={onLater}
+          onClick={(e) => {
+            e.stopPropagation();
+            onLater();
+          }}
           className="py-3 px-4 text-muted-foreground hover:text-foreground hover:bg-muted rounded-xl transition-all text-sm"
         >
           Later

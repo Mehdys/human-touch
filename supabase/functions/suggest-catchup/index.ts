@@ -1,11 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { z } from "https://deno.land/x/zod@v3.22.4/mod.ts";
-
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
+import { handleCors, validateAuth, callGeminiAPI, jsonResponse, errorResponse, withErrorHandling } from "../_shared/utils.ts";
 
 // Input validation schema
 const ContactSchema = z.object({
@@ -21,197 +16,134 @@ const RequestSchema = z.object({
   city: z.string().max(100).nullable().optional(),
 });
 
-serve(async (req) => {
-  if (req.method === "OPTIONS") {
-    return new Response(null, { headers: corsHeaders });
-  }
+serve(withErrorHandling(async (req) => {
+  // Handle CORS
+  const corsResponse = handleCors(req);
+  if (corsResponse) return corsResponse;
 
+  // Validate authentication
+  const { user } = await validateAuth(req);
+
+  // Parse and validate request body with zod
+  let body: unknown;
   try {
-    // Authentication check
-    const authHeader = req.headers.get("Authorization");
-    if (!authHeader?.startsWith("Bearer ")) {
-      return new Response(
-        JSON.stringify({ error: "Unauthorized" }),
-        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
+    body = await req.json();
+  } catch {
+    return errorResponse("Invalid JSON body", 400);
+  }
 
-    const supabase = createClient(
-      Deno.env.get("SUPABASE_URL")!,
-      Deno.env.get("SUPABASE_ANON_KEY")!,
-      { global: { headers: { Authorization: authHeader } } }
-    );
-
-    const token = authHeader.replace("Bearer ", "");
-    const { data: claimsData, error: claimsError } = await supabase.auth.getClaims(token);
-
-    if (claimsError || !claimsData?.claims) {
-      console.error("Auth validation failed:", claimsError);
-      return new Response(
-        JSON.stringify({ error: "Invalid token" }),
-        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
-    const userId = claimsData.claims.sub;
-    console.log("Authenticated user:", userId);
-
-    // Parse and validate request body with zod
-    let body: unknown;
-    try {
-      body = await req.json();
-    } catch {
-      return new Response(
-        JSON.stringify({ error: "Invalid JSON body" }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
-    const parseResult = RequestSchema.safeParse(body);
-    if (!parseResult.success) {
-      console.error("Input validation failed:", parseResult.error.issues);
-      return new Response(
-        JSON.stringify({ error: "Invalid input", details: parseResult.error.issues.map(i => i.message) }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
-    const { contacts, preferences, city } = parseResult.data;
-
-    const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY");
-
-    if (!GEMINI_API_KEY) {
-      throw new Error("GEMINI_API_KEY is not configured");
-    }
-
-    console.log("Generating suggestions for user:", userId, "contacts:", contacts?.length || 0);
-    console.log("User preferences:", preferences);
-    console.log("User city:", city);
-
-    // Contacts are already validated by zod, just map to required format
-    const contactsInfo = contacts.map((c) => ({
-      name: c.name,
-      context: c.context || "",
-      daysSinceMet: c.daysSinceMet,
-      lastCatchup: c.lastCatchup || null,
-    }));
-
-    const placeTypes = preferences && preferences.length > 0
-      ? preferences.join(", ")
-      : "coffee shops, bars, restaurants";
-
-    const sanitizedCity = city || "not specified";
-
-    const systemPrompt = `You are a friendly assistant helping someone stay connected with people they've met. 
-Your job is to suggest when and why they should catch up, AND recommend a SPECIFIC, REAL place to meet in their city.
-
-User's preferred hangout spots: ${placeTypes}
-User's city/area: ${sanitizedCity}
-
-For each contact, generate:
-1. A short, warm suggestion (e.g., "Coffee to discuss the startup idea")
-2. An urgency level (high/medium/low)
-3. A friendly time suggestion
-4. A SPECIFIC, REAL place recommendation.
-   - Do NOT say "A coffee shop".
-   - Say "Starbucks on Main St" or "The Grind Cafe".
-   - It must be a real business name that can be found on Google Maps.
-   - If you don't know the specific city, pick a famous chain or a generic name that sounds real, but prioritize real places if the city is known.
-
-For the \`placeName\` field, provide the actual name of the business.
-For the \`address\` field, provide the street name or neighborhood if known.
-For the \`searchQuery\` field, provide a string to search in Google Maps (e.g., "The Grind Cafe London").`;
-
-    const response = await fetch("https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent", {
-      method: "POST",
-      headers: {
-        "x-goog-api-key": GEMINI_API_KEY,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "google/gemini-3-flash-preview",
-        messages: [
-          { role: "system", content: systemPrompt },
-          {
-            role: "user",
-            content: `Here are the contacts I need suggestions for:\n${JSON.stringify(contactsInfo, null, 2)}\n\nPlease provide personalized catch-up suggestions with REAL place recommendations.`
-          },
-        ],
-        tools: [
-          {
-            type: "function",
-            function: {
-              name: "provide_suggestions",
-              description: "Provide catch-up suggestions for each contact with real place recommendations",
-              parameters: {
-                type: "object",
-                properties: {
-                  suggestions: {
-                    type: "array",
-                    items: {
-                      type: "object",
-                      properties: {
-                        name: { type: "string", description: "Contact name" },
-                        suggestion: { type: "string", description: "Short, warm catch-up suggestion under 60 chars" },
-                        urgency: { type: "string", enum: ["high", "medium", "low"] },
-                        timeframe: { type: "string", description: "Suggested timeframe" },
-                        placeName: { type: "string", description: "Name of the specific place (e.g. 'Joe's Coffee')" },
-                        address: { type: "string", description: "Address or neighborhood of the place" },
-                        searchQuery: { type: "string", description: "Query to search this place on Google Maps" },
-                        placeType: { type: "string", description: "Type of place (coffee, bar, etc.)" },
-                        placeDescription: { type: "string", description: "Why this place is good" },
-                      },
-                      required: ["name", "suggestion", "urgency", "timeframe", "placeName", "searchQuery", "placeType"],
-                    },
-                  },
-                },
-                required: ["suggestions"],
-              },
-            },
-          },
-        ],
-        tool_choice: { type: "function", function: { name: "provide_suggestions" } },
-      }),
-    });
-
-    if (!response.ok) {
-      if (response.status === 429) {
-        return new Response(JSON.stringify({ error: "Rate limit exceeded, please try again later." }), {
-          status: 429,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-      }
-      if (response.status === 402) {
-        return new Response(JSON.stringify({ error: "Usage limit reached." }), {
-          status: 402,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-      }
-      const errorText = await response.text();
-      console.error("AI gateway error:", response.status, errorText);
-      throw new Error(`AI gateway error: ${response.status}`);
-    }
-
-    const data = await response.json();
-    console.log("AI response received for user:", userId);
-
-    const toolCall = data.choices?.[0]?.message?.tool_calls?.[0];
-    if (toolCall?.function?.arguments) {
-      const suggestions = JSON.parse(toolCall.function.arguments);
-      return new Response(JSON.stringify(suggestions), {
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-
-    // Fallback if no tool call
-    return new Response(JSON.stringify({ suggestions: [] }), {
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
-  } catch (error) {
-    console.error("Error in suggest-catchup:", error);
-    return new Response(
-      JSON.stringify({ error: "An error occurred processing your request" }),
-      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+  const parseResult = RequestSchema.safeParse(body);
+  if (!parseResult.success) {
+    console.error("[suggest-catchup] Input validation failed:", parseResult.error.issues);
+    return errorResponse(
+      "Invalid input: " + parseResult.error.issues.map(i => i.message).join(", "),
+      400
     );
   }
-});
+
+  const { contacts, preferences, city } = parseResult.data;
+
+  console.log(`[suggest-catchup] Generating suggestions for user: ${user.id}, contacts: ${contacts?.length || 0}`);
+
+  // Contacts are already validated by zod, just map to required format
+  const contactsInfo = contacts.map((c) => ({
+    name: c.name,
+    context: c.context || "",
+    daysSinceMet: c.daysSinceMet,
+    lastCatchup: c.lastCatchup || null,
+  }));
+
+  const placeTypes = preferences && preferences.length > 0
+    ? preferences.join(", ")
+    : "cafés, restaurants, bars, parks for walks";
+
+  const locationContext = city ? `in ${city}` : "in the user's area";
+
+  // System prompt
+  const systemPrompt = `You are a helpful AI assistant specialized in suggesting personalized catchup activities for people based on their relationships.
+
+Your task is to analyze each contact relationship and suggest:
+1. A creative, warm reason or suggestion for catching up
+2. The urgency level (how soon they should reconnect)
+3. A timeframe suggestion (e.g., "this week", "next weekend")
+4. A specific place name and type (${placeTypes}) ${locationContext}
+
+Be warm, personal, and consider:
+- How long it's been since they last met
+- The context of their relationship
+- Create real, plausible place names that sound authentic
+- Provide practical details (address, description)
+
+Make each suggestion feel thoughtful and tailored to the relationship.`;
+
+  const contactsList = contactsInfo.map((c, i) =>
+    `${i + 1}. ${c.name} (${c.context || 'no context'}) - met ${c.daysSinceMet} days ago, last catchup: ${c.lastCatchup || 'never'}`
+  ).join('\n');
+
+  const userPrompt = `Please suggest catchup activities for these contacts:\n\n${contactsList}\n\nUser preferences: ${placeTypes}\nLocation: ${locationContext}`;
+
+  // Tool definition for Gemini
+  const toolDefinition = {
+    name: "suggest_catchups",
+    description: "Suggest personalized catchup activities for contacts",
+    parameters: {
+      type: "object",
+      properties: {
+        suggestions: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              name: {
+                type: "string",
+                description: "The contact's name"
+              },
+              suggestion: {
+                type: "string",
+                description: "A warm, personal reason or suggestion for catching up (2-3 sentences)"
+              },
+              urgency: {
+                type: "string",
+                enum: ["high", "medium", "low"],
+                description: "How soon they should reconnect based on relationship context"
+              },
+              timeframe: {
+                type: "string",
+                description: "Suggested timeframe (e.g., 'this week', 'next weekend', 'this month')"
+              },
+              placeName: {
+                type: "string",
+                description: "A real-sounding, specific place name (e.g., 'Café Lumière', 'The Garden Bistro')"
+              },
+              address: {
+                type: "string",
+                description: "A plausible address for the venue"
+              },
+              searchQuery: {
+                type: "string",
+                description: "Google Maps search query to find similar places"
+              },
+              placeType: {
+                type: "string",
+                enum: ["cafe", "restaurant", "bar", "walk"],
+                description: "Type of venue suggested"
+              },
+              placeDescription: {
+                type: "string",
+                description: "Brief description of why this place suits the catchup (1 sentence)"
+              }
+            },
+            required: ["name", "suggestion", "urgency", "timeframe", "placeName", "placeType"]
+          }
+        }
+      },
+      required: ["suggestions"]
+    }
+  };
+
+  // Call Gemini API using shared utility
+  const result = await callGeminiAPI(userPrompt, toolDefinition, systemPrompt);
+
+  // Return suggestions
+  return jsonResponse({ suggestions: result.suggestions || [] });
+}));

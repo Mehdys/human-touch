@@ -1,8 +1,9 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { Plus, Sparkles, Users, LogOut, BookUser, Nfc, User, MapPin, Coffee } from "lucide-react";
+import { Plus, Sparkles, Users, BookUser, Nfc, MapPin, Coffee } from "lucide-react";
 import { ContactCard } from "@/components/ui/ContactCard";
+import { ProfileDropdown } from "@/components/ProfileDropdown";
 import { useDbContacts } from "@/hooks/useDbContacts";
 import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
@@ -10,7 +11,6 @@ import { toast } from "sonner";
 export default function Home() {
   const navigate = useNavigate();
   const { feedContacts, loading, snoozeContact, markAsCaughtUp } = useDbContacts();
-  const { signOut } = useAuth();
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [isSelectMode, setIsSelectMode] = useState(false);
 
@@ -21,7 +21,7 @@ export default function Home() {
 
   const handlePlan = (contact: typeof feedContacts[0]) => {
     markAsCaughtUp(contact.id);
-    navigate("/plan", { state: { contact } });
+    navigate(`/plan/${contact.id}`, { state: { contact } });
   };
 
   const toggleSelect = (id: string) => {
@@ -39,13 +39,8 @@ export default function Home() {
   const handleGroupPlan = () => {
     const selectedContacts = feedContacts.filter((c) => selectedIds.has(c.id));
     selectedContacts.forEach((c) => markAsCaughtUp(c.id));
-    navigate("/plan", { state: { contacts: selectedContacts, isGroup: true } });
-  };
-
-  const handleSignOut = async () => {
-    await signOut();
-    toast.success("Signed out");
-    navigate("/");
+    // For group catchups, use the first contact's ID in URL
+    navigate(`/plan/${selectedContacts[0].id}`, { state: { contacts: selectedContacts, isGroup: true } });
   };
 
   if (loading) {
@@ -84,8 +79,8 @@ export default function Home() {
                   setSelectedIds(new Set());
                 }}
                 className={`p-2.5 rounded-full transition-all ${isSelectMode
-                    ? "bg-primary text-primary-foreground"
-                    : "hover:bg-muted text-muted-foreground"
+                  ? "bg-primary text-primary-foreground"
+                  : "hover:bg-muted text-muted-foreground"
                   }`}
               >
                 <Users className="w-5 h-5" />
@@ -97,20 +92,7 @@ export default function Home() {
             >
               <Plus className="w-5 h-5" />
             </button>
-            <button
-              onClick={() => navigate("/profile")}
-              className="p-2.5 rounded-full hover:bg-muted text-muted-foreground transition-all"
-              title="Profile"
-            >
-              <User className="w-5 h-5" />
-            </button>
-            <button
-              onClick={handleSignOut}
-              className="p-2.5 rounded-full hover:bg-muted text-muted-foreground transition-all"
-              title="Sign out"
-            >
-              <LogOut className="w-5 h-5" />
-            </button>
+            <ProfileDropdown />
           </div>
         </div>
       </header>
@@ -151,8 +133,8 @@ export default function Home() {
                   {isSelectMode && (
                     <div
                       className={`absolute -left-1 top-1/2 -translate-y-1/2 w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all z-10 ${selectedIds.has(contact.id)
-                          ? "bg-primary border-primary"
-                          : "border-muted-foreground/30 bg-background"
+                        ? "bg-primary border-primary"
+                        : "border-muted-foreground/30 bg-background"
                         }`}
                     >
                       {selectedIds.has(contact.id) && (

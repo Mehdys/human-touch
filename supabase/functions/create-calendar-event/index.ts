@@ -1,11 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { z } from "https://deno.land/x/zod@v3.22.4/mod.ts";
-
-const corsHeaders = {
-    "Access-Control-Allow-Origin": "*",
-    "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
+import { handleCors, validateAuth, jsonResponse, errorResponse, withErrorHandling } from "../_shared/utils.ts";
 
 const RequestSchema = z.object({
     catchupId: z.string().uuid(),
@@ -16,138 +11,106 @@ const RequestSchema = z.object({
     message: z.string().max(1000).optional(),
 });
 
-serve(async (req) => {
-    if (req.method === "OPTIONS") {
-        return new Response(null, { headers: corsHeaders });
+serve(withErrorHandling(async (req) => {
+    // Handle CORS
+    const corsResponse = handleCors(req);
+    if (corsResponse) return corsResponse;
+
+    // Validate authentication
+    const { user, supabase } = await validateAuth(req);
+
+    // Get provider token
+    const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+
+    if (sessionError || !session) {
+        return errorResponse("Invalid session", 401);
     }
 
-    try {
-        const authHeader = req.headers.get("Authorization");
-        if (!authHeader) {
-            return new Response(
-                JSON.stringify({ error: "No authorization header" }),
-                { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-            );
-        }
+    const providerToken = session.provider_token;
 
-        const supabase = createClient(
-            Deno.env.get("SUPABASE_URL")!,
-            Deno.env.get("SUPABASE_ANON_KEY")!,
-            { global: { headers: { Authorization: authHeader } } }
+    if (!providerToken) {
+        return errorResponse("Calendar not connected. Please connect your Google Calendar first.", 400);
+    }
+
+    // Parse and validate request
+    const body = await req.json();
+    const parseResult = RequestSchema.safeParse(body);
+
+    if (!parseResult.success) {
+        console.error("[create-calendar-event] Validation failed:", parseResult.error.issues);
+        return errorResponse(
+            "Invalid input: " + parseResult.error.issues.map(i => i.message).join(", "),
+            400
         );
+    }
 
-        // Get user's session
-        const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+    const { catchupId, contactName, scheduledTime, durationMinutes, placeName, message } = parseResult.data;
 
-        if (sessionError || !session) {
-            return new Response(
-                JSON.stringify({ error: "Invalid session" }),
-                { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-            );
-        }
+    console.log(`[create-calendar-event] Creating event for user ${user.id}: ${contactName} at ${scheduledTime}`);
 
-        const providerToken = session.provider_token;
+    // Calculate end time
+    const startTime = new Date(scheduledTime);
+    const endTime = new Date(startTime.getTime() + durationMinutes * 60 * 1000);
 
-        if (!providerToken) {
-            return new Response(
-                JSON.stringify({ error: "Calendar not connected" }),
-                { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-            );
-        }
+    // Create Google Calendar event
+    const calendarEvent = {
+        summary: `Catch up with ${contactName}`,
+        description: message || `Catching up with ${contactName}`,
+        start: {
+            dateTime: startTime.toISOString(),
+            timeZone: "UTC",
+        },
 
-        // Parse and validate request
-        const body = await req.json();
-        const parseResult = RequestSchema.safeParse(body);
-
-        if (!parseResult.success) {
-            return new Response(
-                JSON.stringify({
-                    error: "Invalid input",
-                    details: parseResult.error.issues
-                }),
-                { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-            );
-        }
-
-        const { catchupId, contactName, scheduledTime, durationMinutes, placeName, message } = parseResult.data;
-
-        // Calculate end time
-        const startTime = new Date(scheduledTime);
-        const endTime = new Date(startTime.getTime() + durationMinutes * 60 * 1000);
-
-        // Create Google Calendar event
-        const calendarEvent = {
-            summary: `Catch up with ${contactName}`,
-            description: message || `Time to reconnect with ${contactName}!`,
-            start: {
-                dateTime: startTime.toISOString(),
-                timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-            },
-            end: {
-                dateTime: endTime.toISOString(),
-                timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-            },
+        end: {
+            dateTime: endTime.toISOString(),
+            timeZone: "UTC",
+        },
+        ...(placeName && {
             location: placeName,
-            reminders: {
-                useDefault: false,
-                overrides: [
-                    { method: "popup", minutes: 60 },
-                    { method: "popup", minutes: 15 },
-                ],
+        }),
+    };
+
+    // Create event in Google Calendar
+    const calendarResponse = await fetch(
+        "https://www.googleapis.com/calendar/v3/calendars/primary/events",
+        {
+            method: "POST",
+            headers: {
+                Authorization: `Bearer ${providerToken}`,
+                "Content-Type": "application/json",
             },
-        };
-
-        const calendarResponse = await fetch(
-            "https://www.googleapis.com/calendar/v3/calendars/primary/events",
-            {
-                method: "POST",
-                headers: {
-                    Authorization: `Bearer ${providerToken}`,
-                    "Content-Type": "application/json",
-                },
-                body: JSON.stringify(calendarEvent),
-            }
-        );
-
-        if (!calendarResponse.ok) {
-            const error = await calendarResponse.text();
-            console.error("Google Calendar API error:", error);
-            throw new Error("Failed to create calendar event");
+            body: JSON.stringify(calendarEvent),
         }
+    );
 
-        const createdEvent = await calendarResponse.json();
-        console.log(`Created calendar event ${createdEvent.id} for user ${session.user.id}`);
-
-        // Store sync record in database
-        const { error: dbError } = await supabase
-            .from("calendar_events")
-            .insert({
-                user_id: session.user.id,
-                catchup_id: catchupId,
-                google_event_id: createdEvent.id,
-            });
-
-        if (dbError) {
-            console.error("Failed to store calendar sync:", dbError);
-            // Don't fail the request since the calendar event was created successfully
-        }
-
-        return new Response(
-            JSON.stringify({
-                success: true,
-                eventId: createdEvent.id,
-                eventLink: createdEvent.htmlLink,
-            }),
-            { headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
-
-    } catch (error) {
-        console.error("Error in create-calendar-event:", error);
-        return new Response(
-            JSON.stringify({
-                error: error instanceof Error ? error.message : "Internal server error"
-            }),
-            { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
+    if (!calendarResponse.ok) {
+        const errorText = await calendarResponse.text();
+        console.error("[create-calendar-event] Google Calendar API error:", errorText);
+        throw new Error(`Failed to create calendar event: ${calendarResponse.status}`);
     }
-});
+
+    const createdEvent = await calendarResponse.json();
+
+    console.log(`[create-calendar-event] Successfully created event: ${createdEvent.id}`);
+
+    // Store event in database
+    const { error: dbError } = await supabase
+        .from("calendar_events")
+        .insert({
+            user_id: user.id,
+            catchup_id: catchupId,
+            google_event_id: createdEvent.id,
+            event_link: createdEvent.htmlLink,
+        });
+
+    if (dbError) {
+        console.error("[create-calendar-event] Failed to store event in DB:", dbError);
+        // Don't throw - calendar event was created successfully
+    }
+
+    return jsonResponse({
+        eventId: createdEvent.id,
+        eventLink: createdEvent.htmlLink,
+        success: true,
+    });
+}));

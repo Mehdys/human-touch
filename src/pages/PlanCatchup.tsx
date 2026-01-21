@@ -1,9 +1,13 @@
-import { useState, useMemo } from "react";
-import { useNavigate, useLocation } from "react-router-dom";
+import { useState, useMemo, useEffect } from "react";
+import { useNavigate, useLocation, useParams } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { ArrowLeft, Copy, Send, Check, Users, Loader2, Calendar } from "lucide-react";
+import { ArrowLeft, Copy, Send, Check, Users, Loader2, Calendar, MapPin, ExternalLink } from "lucide-react";
 import { toast } from "sonner";
 import { useCalendarAvailability } from "@/hooks/useCalendar";
+import { useCatchupVenues } from "@/hooks/useCatchupVenues";
+import { useAISlotSuggestions } from "@/hooks/useAISlotSuggestions";
+import { useAuth } from "@/contexts/AuthContext";
+import { supabase } from "@/integrations/supabase/client";
 import { format } from "date-fns";
 
 const timeSlots = [
@@ -19,7 +23,8 @@ const placeTypes = [
   { id: "walk", label: "Walk", emoji: "🚶" },
 ];
 
-const places: Record<string, Array<{ id: string; name: string; note: string }>> = {
+// Fallback places if AI fails
+const fallbackPlaces: Record<string, Array<{ id: string; name: string; note: string }>> = {
   cafe: [
     { id: "c1", name: "The Coffee Club", note: "8 min walk" },
     { id: "c2", name: "Morning Glory", note: "Quiet spot" },
@@ -43,9 +48,76 @@ type Step = "time" | "type" | "place" | "ready";
 export default function PlanCatchup() {
   const navigate = useNavigate();
   const location = useLocation();
-  const contact = location.state?.contact;
+  const { contactId } = useParams();
+  const { user } = useAuth();
+
+  // State to hold contact data
+  const [contact, setContact] = useState(location.state?.contact || null);
+  const [loadingContact, setLoadingContact] = useState(!contact && !!contactId);
+
+  const [userProfile, setUserProfile] = useState<{ city: string | null; preferences: string[] | null } | null>(null);
+
+  // Fetch contact if not in state but ID is in URL
+  useEffect(() => {
+    if (!contact && contactId && user) {
+      const fetchContact = async () => {
+        const { data, error } = await supabase
+          .from("contacts")
+          .select("*")
+          .eq("id", contactId)
+          .eq("user_id", user.id)
+          .single();
+
+        if (error) {
+          console.error("Failed to load contact:", error);
+          toast.error("Contact not found");
+          navigate("/");
+          return;
+        }
+
+        setContact(data);
+        setLoadingContact(false);
+      };
+      fetchContact();
+    }
+  }, [contactId, contact, user, navigate]);
+
+  // Fetch user profile for city/preferences
+  useEffect(() => {
+    const fetchProfile = async () => {
+      if (!user) return;
+
+      const { data } = await supabase
+        .from("profiles")
+        .select("city, preferences")
+        .eq("id", user.id)
+        .maybeSingle();
+
+      if (data) setUserProfile(data);
+    };
+    fetchProfile();
+  }, [user]);
+
   const contacts = location.state?.contacts;
   const isGroup = location.state?.isGroup;
+
+  // Show loading state while fetching contact
+  if (loadingContact) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <Loader2 className="w-8 h-8 animate-spin text-primary" />
+        <span className="ml-2 text-muted-foreground">Loading contact...</span>
+      </div>
+    );
+  }
+
+  //  Redirect if no contact data available (moved to useEffect)
+  useEffect(() => {
+    if (!contact && !isGroup && !loadingContact) {
+      toast.error("No contact selected");
+      navigate("/");
+    }
+  }, [contact, isGroup, loadingContact, navigate]);
 
   const names = useMemo(() => {
     if (isGroup && contacts?.length) {
@@ -68,12 +140,65 @@ export default function PlanCatchup() {
   const { data: calendarData, isLoading: loadingCalendar } = useCalendarAvailability();
   const hasCalendar = calendarData?.calendarConnected && calendarData.freeSlots.length > 0;
 
+  // Fetch AI venue suggestions
+  const { venues, loading: loadingVenues } = useCatchupVenues({
+    contactName: contact?.name || "",
+    contactContext: contact?.context,
+    userCity: userProfile?.city || undefined,
+    userPreferences: userProfile?.preferences || undefined,
+  });
+
+  // Fetch AI slot suggestions with reasoning
+  const { suggestions: aiSuggestions, loading: loadingAI, fetchSuggestions } = useAISlotSuggestions(
+    contact?.name || "",
+    contact?.context
+  );
+
+  // Fetch AI suggestions when calendar data is available OR use static slots
+  useEffect(() => {
+    if (contact?.name) {
+      if (calendarData?.calendarConnected) {
+        // Fetch with calendar slots
+        fetchSuggestions();
+      } else {
+        // Fetch with static slots
+        fetchSuggestions(timeSlots);
+      }
+    }
+  }, [calendarData?.calendarConnected, contact?.name]);
+
   const [step, setStep] = useState<Step>("time");
   const [selectedTime, setSelectedTime] = useState<string | null>(null);
   const [selectedType, setSelectedType] = useState<string | null>(null);
   const [selectedPlace, setSelectedPlace] = useState<string | null>(null);
   const [isSending, setIsSending] = useState(false);
   const [isSent, setIsSent] = useState(false);
+
+  // Use AI venues if available, otherwise fallback
+  const places = useMemo(() => {
+    if (venues.length > 0) {
+      const aiPlaces: Record<string, Array<{ id: string; name: string; note: string; googleMapsLink?: string; address?: string }>> = {
+        cafe: [], restaurant: [], bar: [], walk: []
+      };
+      venues.forEach((venue, index) => {
+        const type = (venue.placeType as keyof typeof aiPlaces) || 'cafe';
+        aiPlaces[type].push({
+          id: `ai-${index}`,
+          name: venue.placeName,
+          note: venue.address || venue.placeDescription || "AI Recommended",
+          googleMapsLink: venue.googleMapsLink,
+          address: venue.address,
+        });
+      });
+      Object.keys(fallbackPlaces).forEach((key) => {
+        if (aiPlaces[key as keyof typeof aiPlaces].length === 0) {
+          aiPlaces[key as keyof typeof aiPlaces] = fallbackPlaces[key as keyof typeof fallbackPlaces];
+        }
+      });
+      return aiPlaces;
+    }
+    return fallbackPlaces;
+  }, [venues]);
 
   const selectedTimeData = timeSlots.find((t) => t.id === selectedTime);
   const selectedPlaceData = selectedType
@@ -161,14 +286,34 @@ export default function PlanCatchup() {
                 )}
               </div>
 
-              {loadingCalendar ? (
+              {loadingCalendar || loadingAI ? (
                 <div className="flex items-center justify-center py-12">
                   <Loader2 className="w-6 h-6 animate-spin text-primary" />
-                  <span className="ml-2 text-muted-foreground">Checking your calendar...</span>
+                  <span className="ml-2 text-muted-foreground">
+                    {loadingAI ? "Getting AI suggestions..." : "Checking your calendar..."}
+                  </span>
                 </div>
               ) : hasCalendar ? (
                 <>
-                  <div className="space-y-2">
+                  {/* AI Greeting & Weekly Summary */}
+                  {aiSuggestions?.calendarSummary && (
+                    <div className="mb-4 p-4 bg-primary/5 rounded-xl border border-primary/10">
+                      <p className="text-sm text-foreground leading-relaxed whitespace-pre-wrap">
+                        {aiSuggestions.calendarSummary}
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Warning when AI unavailable */}
+                  {!loadingAI && !aiSuggestions && contact && (
+                    <div className="mb-3 p-3 bg-muted/50 rounded-lg border border-border">
+                      <p className="text-xs text-muted-foreground">
+                        ⚠️ AI suggestions unavailable. Showing your calendar slots.
+                      </p>
+                    </div>
+                  )}
+
+                  <div className="space-y-3">
                     {calendarData!.freeSlots.map((slot, index) => {
                       const startDate = new Date(slot.start);
                       const endDate = new Date(slot.end);
@@ -179,6 +324,9 @@ export default function PlanCatchup() {
                       if (isToday) dayLabel = "Today";
                       if (isTomorrow) dayLabel = "Tomorrow";
 
+                      // Find matching AI suggestion for this slot
+                      const aiSuggestion = aiSuggestions?.suggestions?.[index];
+
                       return (
                         <button
                           key={slot.start}
@@ -186,26 +334,44 @@ export default function PlanCatchup() {
                             setSelectedTime(slot.start);
                             setStep("type");
                           }}
-                          className={`w-full p-4 rounded-xl text-left transition-all border flex justify-between items-center ${selectedTime === slot.start
-                              ? "bg-primary text-primary-foreground border-primary"
-                              : "bg-card border-border hover:border-primary/50"
+                          className={`w-full p-4 rounded-xl text-left transition-all border ${selectedTime === slot.start
+                            ? "bg-primary text-primary-foreground border-primary"
+                            : "bg-card border-border hover:border-primary/50"
                             }`}
                         >
-                          <div className="flex flex-col">
-                            <span className="font-medium">{dayLabel}</span>
-                            <span className={`text-sm ${selectedTime === slot.start ? "opacity-90" : "text-muted-foreground"}`}>
-                              {format(startDate, "h:mm a")} - {format(endDate, "h:mm a")}
+                          <div className="flex justify-between items-start mb-2">
+                            <div className="flex flex-col">
+                              <span className="font-medium">{dayLabel}</span>
+                              <span className={`text-sm ${selectedTime === slot.start ? "opacity-90" : "text-muted-foreground"}`}>
+                                {format(startDate, "h:mm a")} - {format(endDate, "h:mm a")}
+                              </span>
+                            </div>
+                            <span className={`text-xs ${selectedTime === slot.start ? "opacity-75" : "text-muted-foreground"}`}>
+                              {Math.round(slot.duration / 60)}h
                             </span>
                           </div>
-                          <span className={`text-xs ${selectedTime === slot.start ? "opacity-75" : "text-muted-foreground"}`}>
-                            {Math.round(slot.duration / 60)}h {Math.round(slot.duration % 60)}m
-                          </span>
+
+                          {/* AI Reasoning */}
+                          {aiSuggestion && (
+                            <div className={`mt-2 pt-2 border-t ${selectedTime === slot.start ? "border-primary-foreground/20" : "border-border"
+                              }`}>
+                              <div className={`text-xs mb-1.5 space-y-0.5 ${selectedTime === slot.start ? "opacity-80" : "text-muted-foreground"
+                                }`}>
+                                <div>🕐 After: {aiSuggestion.beforeEvent}</div>
+                                <div>⏳ Before: {aiSuggestion.afterEvent}</div>
+                              </div>
+                              <p className={`text-xs leading-relaxed ${selectedTime === slot.start ? "opacity-90" : "text-muted-foreground"
+                                }`}>
+                                💡 {aiSuggestion.reasoning}
+                              </p>
+                            </div>
+                          )}
                         </button>
                       );
                     })}
                   </div>
-                  <p className="text-xs text-muted-foreground text-center">
-                    Showing {calendarData!.freeSlots.length} free slot{calendarData!.freeSlots.length !== 1 ? "s" : ""} from your calendar
+                  <p className="text-xs text-muted-foreground text-center mt-3">
+                    {aiSuggestions ? "AI-analyzed" : "Showing"} {calendarData!.freeSlots.length} optimal slot{calendarData!.freeSlots.length !== 1 ? "s" : ""}
                   </p>
                 </>
               ) : (
@@ -219,8 +385,8 @@ export default function PlanCatchup() {
                           setStep("type");
                         }}
                         className={`w-full p-4 rounded-xl text-left transition-all border flex justify-between items-center ${selectedTime === slot.id
-                            ? "bg-primary text-primary-foreground border-primary"
-                            : "bg-card border-border hover:border-primary/50"
+                          ? "bg-primary text-primary-foreground border-primary"
+                          : "bg-card border-border hover:border-primary/50"
                           }`}
                       >
                         <span className="font-medium">{slot.label}</span>
@@ -285,21 +451,50 @@ export default function PlanCatchup() {
             >
               <h2 className="text-xl font-bold text-foreground">Pick a spot</h2>
 
-              <div className="space-y-2">
-                {places[selectedType].map((place) => (
-                  <button
-                    key={place.id}
-                    onClick={() => {
-                      setSelectedPlace(place.id);
-                      setStep("ready");
-                    }}
-                    className="w-full p-4 rounded-xl text-left transition-all border bg-card border-border hover:border-primary/50 flex justify-between items-center"
-                  >
-                    <span className="font-medium text-foreground">{place.name}</span>
-                    <span className="text-sm text-muted-foreground">{place.note}</span>
-                  </button>
-                ))}
-              </div>
+              {loadingVenues ? (
+                <div className="flex items-center justify-center py-8">
+                  <Loader2 className="w-5 h-5 animate-spin text-primary" />
+                  <span className="ml-2 text-sm text-muted-foreground">Finding great spots...</span>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {places[selectedType].map((place) => (
+                    <button
+                      key={place.id}
+                      onClick={() => {
+                        setSelectedPlace(place.id);
+                        setStep("ready");
+                      }}
+                      className="w-full p-4 rounded-xl text-left transition-all border bg-card border-border hover:border-primary/50"
+                    >
+                      <div className="flex justify-between items-start">
+                        <div className="flex-1">
+                          <span className="font-medium text-foreground block">{place.name}</span>
+                          <span className="text-sm text-muted-foreground">{place.note}</span>
+                        </div>
+                        {(place as any).googleMapsLink && (
+                          <a
+                            href={(place as any).googleMapsLink}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            onClick={(e) => e.stopPropagation()}
+                            className="ml-2 p-2 rounded-lg hover:bg-primary/10 transition-colors flex-shrink-0"
+                            title="View on Google Maps"
+                          >
+                            <MapPin className="w-4 h-4 text-primary" />
+                          </a>
+                        )}
+                      </div>
+                      {(place as any).address && (
+                        <div className="mt-1 text-xs text-muted-foreground flex items-center gap-1">
+                          <MapPin className="w-3 h-3" />
+                          <span>{(place as any).address}</span>
+                        </div>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              )}
 
               <button
                 onClick={() => setStep("ready")}

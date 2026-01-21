@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Session Debug Test</title>
+</head>
+<body>
+    <h1>Supabase Session Debug</h1>
+    <div id="output"></div>
+    
+    <script type="module">
+        import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+        
+        const SUPABASE_URL = 'https://ejhqzvmlurlvkypmmjyl.supabase.co'
+        const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVqaHF6dm1sdXJsdmt5cG1tanlsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njg2NDc4ODAsImV4cCI6MjA4NDIyMzg4MH0.XttMnrVfHotsa3uP0qMh12-dsAPGaxe7RjR70RIqkOs'
+        
+        const supabase = createClient(SUPABASE_URL, SUPABASE_KEY, {
+            auth: {
+                storage: localStorage,
+                persistSession: true,
+                autoRefreshToken: true,
+            }
+        })
+        
+        const output = document.getElementById('output')
+        
+        async function checkSession() {
+            output.innerHTML = '<p>Checking session...</p>'
+            
+            const { data: sessionData, error: sessionError } = await supabase.auth.getSession()
+            
+            output.innerHTML += `<h2>Session Data:</h2>`
+            output.innerHTML += `<pre>${JSON.stringify(sessionData, null, 2)}</pre>`
+            
+            if (sessionError) {
+                output.innerHTML += `<p style="color: red;">Session Error: ${sessionError.message}</p>`
+            }
+            
+            if (sessionData.session) {
+                output.innerHTML += `<p style="color: green;">✓ Session is active</p>`
+                output.innerHTML += `<p>User ID: ${sessionData.session.user.id}</p>`
+                output.innerHTML += `<p>User Email: ${sessionData.session.user.email}</p>`
+                output.innerHTML += `<p>Access Token (first 20 chars): ${sessionData.session.access_token.substring(0, 20)}...</p>`
+                
+                // Now test function call
+                output.innerHTML += `<h2>Testing Edge Function Call:</h2>`
+                try {
+                    const { data, error } = await supabase.functions.invoke('suggest-catchup', {
+                        body: {
+                            contacts: [{
+                                name: "Test User",
+                                context: "Testing",
+                                daysSinceMet: 7,
+                                lastCatchup: null,
+                            }],
+                            preferences: ["coffee shops"],
+                            city: "Paris"
+                        }
+                    })
+                    
+                    if (error) {
+                        output.innerHTML += `<p style="color: red;">Edge Function Error: ${JSON.stringify(error)}</p>`
+                    } else {
+                        output.innerHTML += `<p style="color: green;">✓ Edge Function call succeeded!</p>`
+                        output.innerHTML += `<pre>${JSON.stringify(data, null, 2)}</pre>`
+                    }
+                } catch (err) {
+                    output.innerHTML += `<p style="color: red;">Exception: ${err.message}</p>`
+                }
+            } else {
+                output.innerHTML += `<p style="color: red;">✗ No active session</p>`
+            }
+        }
+        
+        checkSession()
+    </script>
+</body>
+</html>
