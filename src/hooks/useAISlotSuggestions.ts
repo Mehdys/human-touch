@@ -24,7 +24,8 @@ export function useAISlotSuggestions(contactName: string, contactContext?: strin
     const [error, setError] = useState<string | null>(null);
 
     const fetchSuggestions = async (staticSlots?: Array<{ id: string; label: string; time: string }>) => {
-        if (!user || !calendarData?.calendarConnected || !contactName) {
+        // Only require user and contact name - calendar is optional
+        if (!user || !contactName) {
             if (!contactName) {
                 console.warn("[useAISlotSuggestions] No contact name provided, skipping AI suggestions");
             }
@@ -36,8 +37,16 @@ export function useAISlotSuggestions(contactName: string, contactContext?: strin
         const hasStaticSlots = staticSlots && staticSlots.length > 0;
 
         if (!hasCalendarSlots && !hasStaticSlots) {
+            console.warn("[useAISlotSuggestions] No slots available (neither calendar nor static)");
             return;
         }
+
+        console.log("[useAISlotSuggestions] Fetching suggestions", {
+            hasCalendarSlots,
+            hasStaticSlots,
+            calendarSlotsCount: calendarData?.freeSlots?.length || 0,
+            staticSlotsCount: staticSlots?.length || 0
+        });
 
         setLoading(true);
         setError(null);
@@ -81,16 +90,36 @@ export function useAISlotSuggestions(contactName: string, contactContext?: strin
             });
 
             if (response.error) {
+                console.error("[useAISlotSuggestions] Edge Function error:", response.error);
                 throw response.error;
             }
 
+            if (!response.data) {
+                console.error("[useAISlotSuggestions] No data returned from Edge Function");
+                throw new Error("No suggestions returned from AI");
+            }
+
+            console.log("[useAISlotSuggestions] Successfully received AI suggestions");
             setSuggestions(response.data);
         } catch (err) {
+            console.error("[useAISlotSuggestions] Error:", err);
+
             const appError = handleError(err, "useAISlotSuggestions", {
-                customMessage: "Failed to load time suggestions",
+                customMessage: "Failed to load AI suggestions",
                 onRetry: () => fetchSuggestions(staticSlots),
             });
+
             setError(appError.userMessage);
+
+            // Show user-friendly toast
+            const errorMessage = err instanceof Error ? err.message : String(err);
+            if (errorMessage.includes("GEMINI_API_KEY")) {
+                // This is a configuration error - don't show to user
+                console.error("[useAISlotSuggestions] AI service not configured");
+            } else {
+                // Show error to user only if it's not a config issue
+                console.warn("[useAISlotSuggestions] AI suggestions unavailable:", errorMessage);
+            }
         } finally {
             setLoading(false);
         }

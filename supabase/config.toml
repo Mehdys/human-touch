@@ -1,4 +1,14 @@
 project_id = "kaxyzcsbykvznexfqduh"
 
+# Disable JWT verification for all functions (we handle auth internally)
+[functions.get-availability]
+verify_jwt = false
+
+[functions.suggest-slots]
+verify_jwt = false
+
 [functions.suggest-catchup]
+verify_jwt = false
+
+[functions.create-calendar-event]
 verify_jwt = false

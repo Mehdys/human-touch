@@ -160,7 +160,12 @@ Make it feel personalized and thoughtful!`;
     };
 
     // Call Gemini API using shared utility
+    console.log(`[suggest-slots] Calling Gemini AI for user ${user.id}`);
+    console.log(`[suggest-slots] Processing ${slotsWithContext.length} slots with context`);
+
     const result = await callGeminiAPI(userPrompt, toolDefinition, systemPrompt);
+
+    console.log(`[suggest-slots] Successfully generated suggestions`);
 
     // Return result
     return jsonResponse(result);

@@ -151,6 +151,7 @@ REQUEST_BODY=$(jq -n \
   --argjson days "$DAYS_SINCE_MET" \
   --argjson prefs "$USER_PREFERENCES" \
   --arg city "$USER_CITY" \
+  --arg token "${PROVIDER_TOKEN:-}" \
   '{
     contacts: [{
       name: $name,
@@ -159,7 +160,8 @@ REQUEST_BODY=$(jq -n \
       lastCatchup: null
     }],
     preferences: $prefs,
-    city: $city
+    city: $city,
+    provider_token: (if $token != "" then $token else null end)
   }')
 
 echo "Calling Gemini AI to generate personalized suggestions..."

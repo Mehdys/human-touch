@@ -154,18 +154,19 @@ export default function PlanCatchup() {
     contact?.context
   );
 
-  // Fetch AI suggestions when calendar data is available OR use static slots
+  // Fetch AI suggestions when contact is available
   useEffect(() => {
     if (contact?.name) {
-      if (calendarData?.calendarConnected) {
-        // Fetch with calendar slots
+      // Always fetch AI suggestions - use calendar slots if available, otherwise static
+      if (hasCalendar) {
+        console.log('[PlanCatchup] Fetching AI suggestions with calendar slots');
         fetchSuggestions();
       } else {
-        // Fetch with static slots
+        console.log('[PlanCatchup] Fetching AI suggestions with static slots');
         fetchSuggestions(timeSlots);
       }
     }
-  }, [calendarData?.calendarConnected, contact?.name]);
+  }, [hasCalendar, contact?.name]);
 
   const [step, setStep] = useState<Step>("time");
   const [selectedTime, setSelectedTime] = useState<string | null>(null);
@@ -376,26 +377,61 @@ export default function PlanCatchup() {
                 </>
               ) : (
                 <>
+                  {/* AI Greeting for static slots */}
+                  {aiSuggestions?.calendarSummary && (
+                    <div className="mb-4 p-4 bg-primary/5 rounded-xl border border-primary/10">
+                      <p className="text-sm text-foreground leading-relaxed whitespace-pre-wrap">
+                        {aiSuggestions.calendarSummary}
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Show AI processing state */}
+                  {loadingAI && !aiSuggestions && (
+                    <div className="mb-3 p-3 bg-muted/50 rounded-lg border border-border">
+                      <p className="text-xs text-muted-foreground flex items-center gap-2">
+                        <Loader2 className="w-3 h-3 animate-spin" />
+                        Getting AI suggestions for the best times...
+                      </p>
+                    </div>
+                  )}
+
                   <div className="space-y-2">
-                    {timeSlots.map((slot) => (
-                      <button
-                        key={slot.id}
-                        onClick={() => {
-                          setSelectedTime(slot.id);
-                          setStep("type");
-                        }}
-                        className={`w-full p-4 rounded-xl text-left transition-all border flex justify-between items-center ${selectedTime === slot.id
-                          ? "bg-primary text-primary-foreground border-primary"
-                          : "bg-card border-border hover:border-primary/50"
-                          }`}
-                      >
-                        <span className="font-medium">{slot.label}</span>
-                        <span className="opacity-70">{slot.time}</span>
-                      </button>
-                    ))}
+                    {timeSlots.map((slot, index) => {
+                      // Find matching AI suggestion for this slot
+                      const aiSuggestion = aiSuggestions?.suggestions?.[index];
+
+                      return (
+                        <button
+                          key={slot.id}
+                          onClick={() => {
+                            setSelectedTime(slot.id);
+                            setStep("type");
+                          }}
+                          className={`w-full p-4 rounded-xl text-left transition-all border ${selectedTime === slot.id
+                            ? "bg-primary text-primary-foreground border-primary"
+                            : "bg-card border-border hover:border-primary/50"
+                            }`}
+                        >
+                          <div className="flex justify-between items-center">
+                            <span className="font-medium">{slot.label}</span>
+                            <span className={`${selectedTime === slot.id ? "opacity-90" : "opacity-70"}`}>{slot.time}</span>
+                          </div>
+
+                          {/* AI Reasoning for static slots */}
+                          {aiSuggestion && (
+                            <div className={`mt-2 pt-2 border-t ${selectedTime === slot.id ? "border-primary-foreground/20" : "border-border"}`}>
+                              <p className={`text-xs leading-relaxed ${selectedTime === slot.id ? "opacity-90" : "text-muted-foreground"}`}>
+                                💡 {aiSuggestion.reasoning}
+                              </p>
+                            </div>
+                          )}
+                        </button>
+                      );
+                    })}
                   </div>
                   {!loadingCalendar && (
-                    <div className="text-center">
+                    <div className="text-center mt-4">
                       <button
                         onClick={() => {
                           toast.info("Connect your calendar in Settings to see your real availability!");

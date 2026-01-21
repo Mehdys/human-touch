@@ -26,11 +26,14 @@ export function useCalendarAvailability() {
             const { data } = await supabase.auth.getSession();
 
             if (!data.session?.provider_token) {
+                console.warn('[useCalendar] No provider token - calendar not connected');
                 return {
                     freeSlots: [],
                     calendarConnected: false,
                 };
             }
+
+            console.log('[useCalendar] Fetching calendar availability');
 
             const { data: functionData, error } = await supabase.functions.invoke("get-availability", {
                 headers: {
@@ -40,14 +43,42 @@ export function useCalendarAvailability() {
             });
 
             if (error) {
-                console.error("Error fetching availability:", error);
+                console.error("[useCalendar] Error fetching availability:", error);
+
+                // Show user-friendly error based on the error message
+                const errorMessage = error.message || error.toString();
+                if (errorMessage.includes("401") || errorMessage.includes("expired")) {
+                    console.warn("[useCalendar] Calendar access expired");
+                } else if (errorMessage.includes("403") || errorMessage.includes("denied")) {
+                    console.warn("[useCalendar] Calendar access denied");
+                } else {
+                    console.warn("[useCalendar] Calendar fetch failed:", errorMessage);
+                }
+
                 return {
                     freeSlots: [],
                     calendarConnected: false,
                 };
             }
 
+            console.log('[useCalendar] Calendar data received:', {
+                connected: functionData.calendarConnected,
+                slotsCount: functionData.freeSlots?.length || 0,
+                eventsCount: functionData.eventsCount || functionData.calendarEvents?.length || 0
+            });
+
             return functionData as AvailabilityData;
+        },
+        retry: (failureCount, error) => {
+            // Don't retry on auth errors
+            const errorMessage = String(error);
+            if (errorMessage.includes('401') || errorMessage.includes('403') ||
+                errorMessage.includes('unauthorized') || errorMessage.includes('expired')) {
+                console.log('[useCalendar] Not retrying auth error');
+                return false;
+            }
+            // Retry other errors up to 2 times
+            return failureCount < 2;
         },
         refetchOnWindowFocus: false,
         staleTime: 5 * 60 * 1000, // Cache for 5 minutes

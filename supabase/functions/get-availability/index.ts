@@ -105,11 +105,12 @@ serve(withErrorHandling(async (req) => {
   const { provider_token } = await req.json();
 
   if (!provider_token) {
-    console.log("[get-availability] No provider token - calendar not connected");
+    console.warn("[get-availability] No provider token - calendar not connected");
     return jsonResponse({
       calendarConnected: false,
       freeSlots: [],
       calendarEvents: [],
+      error: "Calendar not connected. Please connect your Google Calendar in Settings.",
     });
   }
 
@@ -118,6 +119,8 @@ serve(withErrorHandling(async (req) => {
   // Fetch calendar events from Google
   const timeMin = new Date().toISOString();
   const timeMax = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+
+  console.log(`[get-availability] Requesting events from ${timeMin} to ${timeMax}`);
 
   const calendarResponse = await fetch(
     `https://www.googleapis.com/calendar/v3/calendars/primary/events?timeMin=${timeMin}&timeMax=${timeMax}&singleEvents=true&orderBy=startTime`,
@@ -128,9 +131,33 @@ serve(withErrorHandling(async (req) => {
     }
   );
 
+  console.log(`[get-availability] Calendar API response status: ${calendarResponse.status}`);
+
   if (!calendarResponse.ok) {
-    console.error("[get-availability] Google Calendar API error:", calendarResponse.status);
-    throw new Error(`Failed to fetch calendar events: ${calendarResponse.status}`);
+    const errorBody = await calendarResponse.text();
+    console.error("[get-availability] Google Calendar API error:", {
+      status: calendarResponse.status,
+      statusText: calendarResponse.statusText,
+      body: errorBody,
+    });
+
+    // Return user-friendly error based on status code
+    if (calendarResponse.status === 401) {
+      return errorResponse(
+        "Calendar access expired. Please reconnect your Google Calendar in Settings.",
+        401
+      );
+    } else if (calendarResponse.status === 403) {
+      return errorResponse(
+        "Calendar access denied. Please check permissions in Settings.",
+        403
+      );
+    } else {
+      return errorResponse(
+        `Failed to fetch calendar events. Please try again later. (${calendarResponse.status})`,
+        calendarResponse.status
+      );
+    }
   }
 
   const calendarData = await calendarResponse.json();

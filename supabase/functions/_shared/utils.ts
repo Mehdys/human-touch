@@ -86,11 +86,11 @@ export async function validateAuth(req: Request): Promise<AuthResult> {
 }
 
 // ============================================================================
-// AI API Utilities (Featherless AI)
+// AI API Utilities (Groq - Free Tier)
 // ============================================================================
 
 /**
- * Call AI API using Featherless AI (DeepSeek V3)
+ * Call AI API using Groq (Free Tier)
  * Uses OpenAI-compatible API format with JSON mode
  */
 export async function callGeminiAPI(
@@ -102,18 +102,18 @@ export async function callGeminiAPI(
     },
     systemPrompt?: string
 ): Promise<any> {
-    const FEATHERLESS_API_KEY = Deno.env.get("FEATHERLESS_API_KEY");
-    if (!FEATHERLESS_API_KEY) {
-        console.error("[AI API] CRITICAL: FEATHERLESS_API_KEY environment variable is not set!");
-        console.error("[AI API] Please configure it in Supabase dashboard: Edge Functions > Secrets");
-        throw new Error("FEATHERLESS_API_KEY not configured in Edge Function secrets. Please add it in Supabase dashboard.");
+    const GROQ_API_KEY = Deno.env.get("GROQ_API_KEY");
+    if (!GROQ_API_KEY) {
+        console.error("[AI API] CRITICAL: GROQ_API_KEY environment variable is not set!");
+        console.error("[AI API] Get a free API key at: https://console.groq.com/keys");
+        throw new Error("GROQ_API_KEY not configured. Get a free key at console.groq.com");
     }
 
-    // Model: deepseek-ai/DeepSeek-V3-0324 (as requested)
-    const model = "deepseek-ai/DeepSeek-V3-0324";
-    const url = "https://api.featherless.ai/v1/chat/completions";
+    // Model: llama-3.3-70b-versatile (updated from deprecated 3.1)
+    const model = "llama-3.3-70b-versatile";
+    const url = "https://api.groq.com/openai/v1/chat/completions";
 
-    console.log(`[AI API] Making request to Featherless AI (${model})`);
+    console.log(`[AI API] Making request to Groq (${model})`);
 
     // Build messages array
     const messages: any[] = [];
@@ -136,7 +136,7 @@ export async function callGeminiAPI(
         response = await fetch(url, {
             method: "POST",
             headers: {
-                "Authorization": `Bearer ${FEATHERLESS_API_KEY}`,
+                "Authorization": `Bearer ${GROQ_API_KEY}`,
                 "Content-Type": "application/json",
             },
             body: JSON.stringify({
@@ -149,7 +149,7 @@ export async function callGeminiAPI(
         });
     } catch (fetchError) {
         console.error("[AI API] Network error:", fetchError);
-        throw new Error(`Failed to connect to Featherless AI: ${fetchError instanceof Error ? fetchError.message : 'Unknown network error'}`);
+        throw new Error(`Failed to connect to Groq: ${fetchError instanceof Error ? fetchError.message : 'Unknown network error'}`);
     }
 
     if (!response.ok) {
@@ -157,16 +157,16 @@ export async function callGeminiAPI(
         console.error(`[AI API] HTTP ${response.status} error:`, errorText);
 
         if (response.status === 401 || response.status === 403) {
-            throw new Error(`Featherless AI authentication failed (${response.status}). Please verify your FEATHERLESS_API_KEY.`);
+            throw new Error(`Groq authentication failed (${response.status}). Get a free API key at console.groq.com`);
         } else if (response.status === 429) {
-            throw new Error("Featherless AI rate limit exceeded. Please try again later.");
+            throw new Error("Groq rate limit exceeded. Please wait a moment and try again.");
         } else {
-            throw new Error(`Featherless AI error (${response.status}): ${errorText.substring(0, 200)}`);
+            throw new Error(`Groq API error (${response.status}): ${errorText.substring(0, 200)}`);
         }
     }
 
     const data = await response.json();
-    console.log(`[AI API] Received response from Featherless AI`);
+    console.log(`[AI API] Received response from Groq`);
 
     let textContent = data.choices?.[0]?.message?.content;
 
